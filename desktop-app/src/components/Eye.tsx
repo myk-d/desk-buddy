@@ -1,4 +1,6 @@
-export function Eye({ color = '#38bdf8', pupilOffset = 0 }: { color?: string; pupilOffset?: number }) {
+import { colors } from '../theme';
+
+export function Eye({ color = colors.accent, pupilOffset = 0 }: { color?: string; pupilOffset?: number }) {
 	return (
 		<div
 			style={{
@@ -17,7 +19,7 @@ export function Eye({ color = '#38bdf8', pupilOffset = 0 }: { color?: string; pu
 				style={{
 					width: '22px',
 					height: '22px',
-					backgroundColor: '#0f172a',
+					backgroundColor: colors.bg,
 					borderRadius: '50%',
 					transform: `translateX(${pupilOffset}px)`,
 					transition: 'transform 0.35s ease',

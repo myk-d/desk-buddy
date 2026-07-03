@@ -3,6 +3,8 @@ import { exec, execSync } from 'child_process';
 import { dirname, join } from 'path';
 import { SerialPort } from 'serialport';
 import { fileURLToPath } from 'url';
+import { createJsonStore } from './store';
+import type { Todo, PomodoroPreset } from '../src/types';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -260,6 +262,19 @@ function startAutoConnectScanner() {
 }
 
 app.whenReady().then(() => {
+	const todoStore = createJsonStore<Todo>('todos.json');
+	const pomodoroStore = createJsonStore<PomodoroPreset>('pomodoros.json');
+
+	ipcMain.handle('todos:list', () => todoStore.list());
+	ipcMain.handle('todos:create', (_, data: Omit<Todo, 'id' | 'createdAt' | 'updatedAt'>) => todoStore.create(data));
+	ipcMain.handle('todos:update', (_, id: string, patch: Partial<Omit<Todo, 'id' | 'createdAt'>>) => todoStore.update(id, patch));
+	ipcMain.handle('todos:remove', (_, id: string) => todoStore.remove(id));
+
+	ipcMain.handle('pomodoros:list', () => pomodoroStore.list());
+	ipcMain.handle('pomodoros:create', (_, data: Omit<PomodoroPreset, 'id' | 'createdAt' | 'updatedAt'>) => pomodoroStore.create(data));
+	ipcMain.handle('pomodoros:update', (_, id: string, patch: Partial<Omit<PomodoroPreset, 'id' | 'createdAt'>>) => pomodoroStore.update(id, patch));
+	ipcMain.handle('pomodoros:remove', (_, id: string) => pomodoroStore.remove(id));
+
 	createWindow();
 
 	app.on('activate', function () {

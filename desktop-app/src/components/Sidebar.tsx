@@ -1,8 +1,10 @@
 import { Page } from '../types';
+import { colors } from '../theme';
 
 const NAV_ITEMS: [Page, string][] = [
-	['dashboard', '📊 Dashboard'],
-	['pomodoro', '⏱ Pomodoro'],
+	['dashboard', 'Dashboard'],
+	['todo', 'Todo'],
+	['pomodoro', 'Pomodoro'],
 ];
 
 interface Props {
@@ -15,21 +17,18 @@ interface Props {
 export function Sidebar({ activePage, onPageChange, connected, connectedPath }: Props) {
 	return (
 		<aside
+			className="gb-sidebar"
 			style={{
-				width: '250px',
-				backgroundColor: '#1e293b',
+				backgroundColor: colors.surface,
 				padding: '25px',
-				display: 'flex',
-				flexDirection: 'column',
 				gap: '20px',
-				borderRight: '1px solid #334155',
-				flexShrink: 0,
+				borderRight: `1px solid ${colors.border}`,
 			}}
 		>
-			<div style={{ fontSize: '22px', fontWeight: 'bold', color: '#38bdf8', letterSpacing: '0.5px' }}>
-				👁️ GAZE BUDDY
+			<div style={{ fontSize: '22px', fontWeight: 'bold', color: colors.accent, letterSpacing: '0.5px' }}>
+				GAZE BUDDY
 			</div>
-			<div style={{ fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold' }}>
+			<div style={{ fontSize: '12px', color: colors.textMuted, textTransform: 'uppercase', fontWeight: 'bold' }}>
 				Control Console
 			</div>
 
@@ -42,8 +41,8 @@ export function Sidebar({ activePage, onPageChange, connected, connectedPath }: 
 							padding: '9px 12px',
 							borderRadius: '7px',
 							border: 'none',
-							backgroundColor: activePage === id ? '#0f172a' : 'transparent',
-							color: activePage === id ? '#f8fafc' : '#64748b',
+							backgroundColor: activePage === id ? colors.bg : 'transparent',
+							color: activePage === id ? colors.textPrimary : colors.textFaint,
 							fontSize: '13px',
 							fontWeight: activePage === id ? '600' : '400',
 							textAlign: 'left',
@@ -60,25 +59,36 @@ export function Sidebar({ activePage, onPageChange, connected, connectedPath }: 
 
 			<div
 				style={{
+					display: 'flex',
+					alignItems: 'center',
+					justifyContent: 'center',
+					gap: '8px',
 					padding: '12px',
 					borderRadius: '8px',
-					textAlign: 'center',
 					fontWeight: 'bold',
 					fontSize: '14px',
 					backgroundColor: connected ? '#065f46' : '#1c1917',
-					color: connected ? '#4ade80' : '#78716c',
+					color: connected ? colors.successBright : '#78716c',
 					border: `1px solid ${connected ? '#166534' : '#292524'}`,
 					transition: 'all 0.3s ease',
 				}}
 			>
-				{connected ? '🟢 DEVICE ONLINE' : '⏳ CONNECTING...'}
+				<span
+					style={{
+						width: '8px',
+						height: '8px',
+						borderRadius: '50%',
+						backgroundColor: connected ? colors.successBright : '#78716c',
+					}}
+				/>
+				{connected ? 'DEVICE ONLINE' : 'CONNECTING...'}
 			</div>
 
 			{connectedPath && (
 				<div
 					style={{
 						fontSize: '11px',
-						color: '#475569',
+						color: colors.textDisabled,
 						fontFamily: 'monospace',
 						textAlign: 'center',
 						wordBreak: 'break-all',

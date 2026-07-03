@@ -1,8 +1,50 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, ipcMain, BrowserWindow } from "electron";
 import { execSync, exec } from "child_process";
-import { dirname, join } from "path";
+import { join, dirname } from "path";
 import { SerialPort } from "serialport";
 import { fileURLToPath } from "url";
+import { randomUUID } from "crypto";
+import { writeFileSync, existsSync, readFileSync } from "fs";
+function createJsonStore(filename) {
+  const filePath = join(app.getPath("userData"), filename);
+  function readAll() {
+    if (!existsSync(filePath)) return [];
+    try {
+      return JSON.parse(readFileSync(filePath, "utf8"));
+    } catch (err) {
+      console.error(`[store] failed to parse ${filename}:`, err.message);
+      return [];
+    }
+  }
+  function writeAll(items) {
+    writeFileSync(filePath, JSON.stringify(items, null, 2), "utf8");
+  }
+  return {
+    list() {
+      return readAll();
+    },
+    create(data) {
+      const now = Date.now();
+      const item = { ...data, id: randomUUID(), createdAt: now, updatedAt: now };
+      const items = readAll();
+      items.push(item);
+      writeAll(items);
+      return item;
+    },
+    update(id, patch) {
+      const items = readAll();
+      const index = items.findIndex((item) => item.id === id);
+      if (index === -1) return null;
+      const updated = { ...items[index], ...patch, updatedAt: Date.now() };
+      items[index] = updated;
+      writeAll(items);
+      return updated;
+    },
+    remove(id) {
+      writeAll(readAll().filter((item) => item.id !== id));
+    }
+  };
+}
 const __filename$1 = fileURLToPath(import.meta.url);
 const __dirname$1 = dirname(__filename$1);
 let activePort = null;
@@ -272,6 +314,16 @@ function startAutoConnectScanner() {
   }, 2e3);
 }
 app.whenReady().then(() => {
+  const todoStore = createJsonStore("todos.json");
+  const pomodoroStore = createJsonStore("pomodoros.json");
+  ipcMain.handle("todos:list", () => todoStore.list());
+  ipcMain.handle("todos:create", (_, data) => todoStore.create(data));
+  ipcMain.handle("todos:update", (_, id, patch) => todoStore.update(id, patch));
+  ipcMain.handle("todos:remove", (_, id) => todoStore.remove(id));
+  ipcMain.handle("pomodoros:list", () => pomodoroStore.list());
+  ipcMain.handle("pomodoros:create", (_, data) => pomodoroStore.create(data));
+  ipcMain.handle("pomodoros:update", (_, id, patch) => pomodoroStore.update(id, patch));
+  ipcMain.handle("pomodoros:remove", (_, id) => pomodoroStore.remove(id));
   createWindow();
   app.on("activate", function() {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -1,5 +1,6 @@
 import { RefObject } from 'react';
 import { COMMANDS } from '../constants';
+import { colors } from '../theme';
 
 interface Props {
 	connected: boolean;
@@ -16,18 +17,18 @@ export function DashboardPage({ connected, currentMode, deviceLog, logEndRef, on
 		<>
 			<div>
 				<h1 style={{ margin: 0, fontSize: '32px', fontWeight: 'bold' }}>State Monitor</h1>
-				<p style={{ color: '#94a3b8', marginTop: '6px', marginBottom: 0, fontSize: '16px' }}>
+				<p style={{ color: colors.textMuted, marginTop: '6px', marginBottom: 0, fontSize: '16px' }}>
 					Emotion emulation control panel
 				</p>
 			</div>
 
-			<div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '25px' }}>
+			<div className="gb-grid-2col" style={{ gap: '25px' }}>
 				<div
 					style={{
 						padding: '30px 20px',
-						backgroundColor: '#1e293b',
+						backgroundColor: colors.surface,
 						borderRadius: '12px',
-						border: '1px solid #334155',
+						border: `1px solid ${colors.border}`,
 						display: 'flex',
 						flexDirection: 'column',
 						alignItems: 'center',
@@ -35,18 +36,18 @@ export function DashboardPage({ connected, currentMode, deviceLog, logEndRef, on
 						gap: '10px',
 					}}
 				>
-					<span style={{ fontSize: '14px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold' }}>
+					<span style={{ fontSize: '14px', color: colors.textMuted, textTransform: 'uppercase', fontWeight: 'bold' }}>
 						Active Mode
 					</span>
-					<span style={{ fontSize: '42px', fontWeight: 'bold', color: '#38bdf8' }}>{currentMode}</span>
+					<span style={{ fontSize: '42px', fontWeight: 'bold', color: colors.accent }}>{currentMode}</span>
 				</div>
 
 				<div
 					style={{
 						padding: '25px',
-						backgroundColor: '#1e293b',
+						backgroundColor: colors.surface,
 						borderRadius: '12px',
-						border: '1px solid #334155',
+						border: `1px solid ${colors.border}`,
 						display: 'flex',
 						flexDirection: 'column',
 						gap: '16px',
@@ -64,8 +65,8 @@ export function DashboardPage({ connected, currentMode, deviceLog, logEndRef, on
 									borderRadius: '8px',
 									border: 'none',
 									cursor: connected ? 'pointer' : 'not-allowed',
-									backgroundColor: connected ? bg : '#1e293b',
-									color: connected ? '#fff' : '#475569',
+									backgroundColor: connected ? bg : colors.surface,
+									color: connected ? colors.textPrimary : colors.textDisabled,
 									fontSize: '14px',
 									fontWeight: '600',
 									transition: 'filter 0.15s',
@@ -86,7 +87,7 @@ export function DashboardPage({ connected, currentMode, deviceLog, logEndRef, on
 							border: `1px solid ${connected ? '#7c2d12' : '#292524'}`,
 							cursor: connected ? 'pointer' : 'not-allowed',
 							backgroundColor: connected ? '#1c0a00' : 'transparent',
-							color: connected ? '#fb923c' : '#475569',
+							color: connected ? colors.warning : colors.textDisabled,
 							fontSize: '13px',
 							fontWeight: '600',
 							transition: 'filter 0.15s',
@@ -94,16 +95,16 @@ export function DashboardPage({ connected, currentMode, deviceLog, logEndRef, on
 						onMouseEnter={(e) => connected && ((e.target as HTMLButtonElement).style.filter = 'brightness(1.3)')}
 						onMouseLeave={(e) => ((e.target as HTMLButtonElement).style.filter = 'brightness(1)')}
 					>
-						🔄 RESET DEVICE
+						RESET DEVICE
 					</button>
 				</div>
 			</div>
 
 			<div
 				style={{
-					backgroundColor: '#1e293b',
+					backgroundColor: colors.surface,
 					borderRadius: '12px',
-					border: '1px solid #334155',
+					border: `1px solid ${colors.border}`,
 					padding: '20px',
 					display: 'flex',
 					flexDirection: 'column',
@@ -116,7 +117,7 @@ export function DashboardPage({ connected, currentMode, deviceLog, logEndRef, on
 					<span
 						style={{
 							fontSize: '14px',
-							color: '#94a3b8',
+							color: colors.textMuted,
 							textTransform: 'uppercase',
 							fontWeight: 'bold',
 							letterSpacing: '0.5px',
@@ -130,7 +131,7 @@ export function DashboardPage({ connected, currentMode, deviceLog, logEndRef, on
 							style={{
 								background: 'none',
 								border: 'none',
-								color: '#475569',
+								color: colors.textDisabled,
 								cursor: 'pointer',
 								fontSize: '12px',
 								padding: '2px 6px',
@@ -146,12 +147,12 @@ export function DashboardPage({ connected, currentMode, deviceLog, logEndRef, on
 						overflowY: 'auto',
 						fontFamily: 'monospace',
 						fontSize: '12px',
-						color: '#94a3b8',
+						color: colors.textMuted,
 						lineHeight: '1.7',
 					}}
 				>
 					{deviceLog.length === 0 ? (
-						<span style={{ color: '#334155' }}>No data received yet...</span>
+						<span style={{ color: colors.border }}>No data received yet...</span>
 					) : (
 						deviceLog.map((line, i) => {
 							const isSent = line.startsWith('→');
@@ -160,11 +161,11 @@ export function DashboardPage({ connected, currentMode, deviceLog, logEndRef, on
 								<div
 									key={i}
 									style={{
-										color: isSent ? '#38bdf8' : isMeta ? '#475569' : '#94a3b8',
+										color: isSent ? colors.accent : isMeta ? colors.textDisabled : colors.textMuted,
 										fontStyle: isMeta ? 'italic' : 'normal',
 									}}
 								>
-									{!isSent && !isMeta && <span style={{ color: '#334155', userSelect: 'none' }}>&gt; </span>}
+									{!isSent && !isMeta && <span style={{ color: colors.border, userSelect: 'none' }}>&gt; </span>}
 									{line}
 								</div>
 							);
