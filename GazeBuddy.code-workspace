@@ -1,0 +1,18 @@
+{
+    "folders": [
+        {
+            "name": "Firmware (ESP32-S3)",
+            "path": "firmware"
+        },
+        {
+            "name": "Desktop App (Electron)",
+            "path": "desktop-app"
+        }
+    ],
+    "settings": {
+        "files.exclude": {
+            "**/node_modules": true,
+            "**/.pio": true
+        }
+    }
+}
