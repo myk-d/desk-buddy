@@ -132,52 +132,46 @@ public:
   void clear() { buf.fillScreen(0x0000); }
 
   // bitmap: 1bpp, MSB зліва, byteWidth байт на рядок (як у idle01.h/focus01.h/...)
+  // Draws both ON (color) and OFF (black) pixels so caller doesn't need clear().
   void drawBitmap(const uint8_t *bitmap, int byteWidth, int h, uint16_t color)
   {
     int w = byteWidth * 8;
     for (int row = 0; row < h; row++)
     {
+      const uint8_t *rowPtr = bitmap + row * byteWidth;
+      uint8_t b = pgm_read_byte(rowPtr);
       int col = 0;
       while (col < w)
       {
-        uint8_t b = pgm_read_byte(bitmap + row * byteWidth + (col >> 3));
-        bool bit = (b >> (7 - (col & 7))) & 0x01;
-        if (!bit)
-        {
-          col++;
-          continue;
-        }
+        uint16_t c = ((b >> (7 - (col & 7))) & 1) ? color : 0x0000;
         int start = col;
-        while (col < w)
-        {
-          uint8_t bb = pgm_read_byte(bitmap + row * byteWidth + (col >> 3));
-          if (!((bb >> (7 - (col & 7))) & 0x01))
-            break;
+        do {
           col++;
-        }
-        buf.fillRect(start, row, col - start, 1, color);
+          if ((col & 7) == 0 && col < w) b = pgm_read_byte(rowPtr + (col >> 3));
+        } while (col < w && (((b >> (7 - (col & 7))) & 1) ? color : 0x0000) == c);
+        buf.fillRect(start, row, col - start, 1, c);
       }
     }
   }
 
-  // Масштабує внутрішній буфер на справжній екран. Малює БУДЬ-ЯКІ рани
-  // (включно з чорним) — інакше старий кадр не затирається (граблі,
-  // на які ми вже наступали).
   void present()
   {
+    const uint16_t *raw = (const uint16_t *)buf.getBuffer();
+    lcd.startWrite();
     for (int y = 0; y < OLED_H; y++)
     {
+      const uint16_t *row = raw + y * OLED_W;
       int x = 0;
       while (x < OLED_W)
       {
-        uint16_t c = buf.readPixel(x, y);
-        int start = x;
-        while (x < OLED_W && buf.readPixel(x, y) == c)
-          x++;
+        uint16_t c = row[x];
+        int start = x++;
+        while (x < OLED_W && row[x] == c) x++;
         lcd.fillRect(OLED_DRAW_X + start * OLED_SCALE, OLED_DRAW_Y + y * OLED_SCALE,
                      (x - start) * OLED_SCALE, OLED_SCALE, c);
       }
     }
+    lcd.endWrite();
   }
 };
 
@@ -208,6 +202,7 @@ public:
   // Повертає true, якщо це був останній кадр одноразової анімації
   bool tick(bool loop)
   {
+    if (!_frames) return false;
     if (millis() - _lastMs < _delayMs)
       return false;
     _lastMs = millis();
@@ -239,7 +234,6 @@ private:
   void _drawFrame(uint16_t idx)
   {
     const uint8_t *data = (const uint8_t *)pgm_read_ptr(&_frames[idx]);
-    canvas.clear();
     canvas.drawBitmap(data, _byteWidth, _height, _color);
     canvas.present();
   }
