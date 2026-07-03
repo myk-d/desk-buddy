@@ -7,6 +7,7 @@ declare global {
 			sendPacket: (packet: string) => void;
 			onStatusChange: (callback: (status: string, path?: string) => void) => void;
 			onData: (callback: (data: string) => void) => void;
+			onModeChange: (callback: (mode: string) => void) => void;
 		};
 	}
 }

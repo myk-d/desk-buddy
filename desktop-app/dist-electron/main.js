@@ -11,9 +11,10 @@ let autoConnectTimer = null;
 let windowTrackerTimer = null;
 let isConnecting = false;
 let isDeviceConnected = false;
-let lastWorkState = null;
+let lastCategory = null;
 const TARGET_VID = "303a";
-const EDITOR_APPS = /* @__PURE__ */ new Set([
+const FOCUS_APPS = /* @__PURE__ */ new Set([
+  // editors / IDEs
   "code",
   "code - oss",
   "code - insiders",
@@ -56,8 +57,71 @@ const EDITOR_APPS = /* @__PURE__ */ new Set([
   "eclipse",
   "android studio",
   "arduino ide",
-  "arduino-ide"
+  "arduino-ide",
+  // terminals
+  "gnome-terminal-server",
+  "konsole",
+  "xterm",
+  "alacritty",
+  "kitty",
+  "xfce4-terminal",
+  "terminal",
+  "iterm2",
+  "iterm",
+  // macOS
+  "windowsterminal",
+  "cmd",
+  "powershell",
+  "pwsh"
+  // Windows
 ]);
+const RELAX_APPS = /* @__PURE__ */ new Set([
+  // browsers
+  "google-chrome",
+  "google-chrome-stable",
+  "google chrome",
+  "chrome",
+  "firefox",
+  "firefox-esr",
+  "microsoft-edge",
+  "microsoft edge",
+  "msedge",
+  "safari",
+  // macOS
+  "brave-browser",
+  "brave",
+  "chromium",
+  "chromium-browser",
+  "opera",
+  // media
+  "spotify",
+  "vlc",
+  // chat / social
+  "discord",
+  "slack",
+  "telegram",
+  "telegram desktop",
+  "microsoft teams",
+  "teams",
+  // games
+  "steam"
+]);
+function classifyApp(appName) {
+  if (!appName) return "idle";
+  if (FOCUS_APPS.has(appName)) return "focus";
+  if (RELAX_APPS.has(appName)) return "relax";
+  return "idle";
+}
+const ANIM_PACKET = {
+  focus: "#ANIM:focus\n",
+  relax: "#ANIM:relax\n",
+  idle: "#ANIM:idle\n"
+};
+const MODE_LABEL = {
+  focus: "WORKING",
+  relax: "RELAX",
+  idle: "IDLE"
+};
 const WIN_PS_ENCODED = process.platform === "win32" ? Buffer.from(
   `$code=@"
 using System;
@@ -111,13 +175,15 @@ function startWindowTracker() {
     isChecking = true;
     try {
       const appName = await getActiveWindowApp();
-      const newState = appName && EDITOR_APPS.has(appName) ? "WORKING" : "IDLE";
-      if (newState === lastWorkState) return;
-      lastWorkState = newState;
-      const packet = newState === "WORKING" ? "#W\n" : "#I\n";
-      activePort.write(packet, (err) => {
+      const category = classifyApp(appName);
+      if (category === lastCategory) return;
+      lastCategory = category;
+      activePort.write(ANIM_PACKET[category], (err) => {
         if (err) console.error("[window-tracker] write error:", err.message);
-        else console.log(`[window-tracker] → ${newState} (app: ${appName ?? "unknown"})`);
+        else {
+          console.log(`[window-tracker] → ${MODE_LABEL[category]} (app: ${appName ?? "unknown"})`);
+          mainWindow == null ? void 0 : mainWindow.webContents.send("tracker:mode", MODE_LABEL[category]);
+        }
       });
     } finally {
       isChecking = false;
@@ -149,7 +215,7 @@ function createWindow() {
 function notifyDisconnected() {
   if (!isDeviceConnected) return;
   isDeviceConnected = false;
-  lastWorkState = null;
+  lastCategory = null;
   mainWindow == null ? void 0 : mainWindow.webContents.send("serial:status", "disconnected");
 }
 function startAutoConnectScanner() {

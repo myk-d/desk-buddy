@@ -18,6 +18,10 @@ export default function App() {
 	const { status, connectedPath, deviceLog, setDeviceLog, logEndRef, sendPacket } = useSerial();
 
 	useEffect(() => {
+		window.api.onModeChange(setCurrentMode);
+	}, []);
+
+	useEffect(() => {
 		if (status !== 'connected') return;
 		if (!localStorage.getItem('gb_connected')) {
 			localStorage.setItem('gb_connected', '1');

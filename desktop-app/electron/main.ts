@@ -13,15 +13,18 @@ let autoConnectTimer: NodeJS.Timeout | null = null;
 let windowTrackerTimer: NodeJS.Timeout | null = null;
 let isConnecting = false;
 let isDeviceConnected = false;
-let lastWorkState: 'WORKING' | 'IDLE' | null = null;
+let lastCategory: Category | null = null;
 
 const TARGET_VID = '303a';
+
+type Category = 'focus' | 'relax' | 'idle';
 
 // Names are compared lowercase after normalisation.
 // Linux  → WM_CLASS instance (xprop)      e.g. "code", "webstorm"
 // macOS  → frontmost process name (osascript)  e.g. "code", "webstorm"
 // Windows → process name without .exe (powershell) e.g. "code", "idea64"
-const EDITOR_APPS = new Set([
+const FOCUS_APPS = new Set([
+	// editors / IDEs
 	'code', 'code - oss', 'code - insiders', 'vscodium', 'codium',
 	'idea', 'idea64', 'intellij idea', 'intellij idea community edition',
 	'webstorm', 'webstorm64',
@@ -35,7 +38,49 @@ const EDITOR_APPS = new Set([
 	'devenv',          // Visual Studio (Windows)
 	'notepad++',       // Windows
 	'eclipse', 'android studio', 'arduino ide', 'arduino-ide',
+	// terminals
+	'gnome-terminal-server', 'konsole', 'xterm', 'alacritty', 'kitty', 'xfce4-terminal',
+	'terminal', 'iterm2', 'iterm',           // macOS
+	'windowsterminal', 'cmd', 'powershell', 'pwsh', // Windows
 ]);
+
+const RELAX_APPS = new Set([
+	// browsers
+	'google-chrome', 'google-chrome-stable', 'google chrome', 'chrome',
+	'firefox', 'firefox-esr',
+	'microsoft-edge', 'microsoft edge', 'msedge',
+	'safari',          // macOS
+	'brave-browser', 'brave',
+	'chromium', 'chromium-browser',
+	'opera',
+	// media
+	'spotify', 'vlc',
+	// chat / social
+	'discord', 'slack', 'telegram', 'telegram desktop',
+	'microsoft teams', 'teams',
+	// games
+	'steam',
+]);
+
+function classifyApp(appName: string | null): Category {
+	if (!appName) return 'idle';
+	if (FOCUS_APPS.has(appName)) return 'focus';
+	if (RELAX_APPS.has(appName)) return 'relax';
+	return 'idle';
+}
+
+const ANIM_PACKET: Record<Category, string> = {
+	focus: '#ANIM:focus\n',
+	relax: '#ANIM:relax\n',
+	idle: '#ANIM:idle\n',
+};
+
+// Matches the mode labels already used by the manual buttons (see src/constants.ts ANIM_MODE_MAP).
+const MODE_LABEL: Record<Category, string> = {
+	focus: 'WORKING',
+	relax: 'RELAX',
+	idle: 'IDLE',
+};
 
 // Pre-encode the Windows PowerShell script as UTF-16LE base64 once at startup.
 // -EncodedCommand avoids all shell-quoting issues with embedded strings.
@@ -102,15 +147,17 @@ function startWindowTracker() {
 		isChecking = true;
 		try {
 			const appName = await getActiveWindowApp();
-			const newState: 'WORKING' | 'IDLE' = appName && EDITOR_APPS.has(appName) ? 'WORKING' : 'IDLE';
+			const category = classifyApp(appName);
 
-			if (newState === lastWorkState) return;
-			lastWorkState = newState;
+			if (category === lastCategory) return;
+			lastCategory = category;
 
-			const packet = newState === 'WORKING' ? '#W\n' : '#I\n';
-			activePort!.write(packet, (err) => {
+			activePort!.write(ANIM_PACKET[category], (err) => {
 				if (err) console.error('[window-tracker] write error:', err.message);
-				else console.log(`[window-tracker] → ${newState} (app: ${appName ?? 'unknown'})`);
+				else {
+					console.log(`[window-tracker] → ${MODE_LABEL[category]} (app: ${appName ?? 'unknown'})`);
+					mainWindow?.webContents.send('tracker:mode', MODE_LABEL[category]);
+				}
 			});
 		} finally {
 			isChecking = false;
@@ -146,7 +193,7 @@ function createWindow(): void {
 function notifyDisconnected() {
 	if (!isDeviceConnected) return;
 	isDeviceConnected = false;
-	lastWorkState = null; // reset so reconnect immediately re-syncs state
+	lastCategory = null; // reset so reconnect immediately re-syncs state
 	mainWindow?.webContents.send('serial:status', 'disconnected');
 }
 

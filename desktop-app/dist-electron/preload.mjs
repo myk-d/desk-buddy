@@ -6,5 +6,8 @@ contextBridge.exposeInMainWorld("api", {
   },
   onData: (callback) => {
     ipcRenderer.on("serial:data", (_, data) => callback(data));
+  },
+  onModeChange: (callback) => {
+    ipcRenderer.on("tracker:mode", (_, mode) => callback(mode));
   }
 });
