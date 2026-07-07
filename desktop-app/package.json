@@ -5,7 +5,9 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite",
-		"build": "tsc && vite build && electron-builder",
+		"build": "tsc && vite build && electron-builder --linux",
+		"build:win": "tsc && vite build && electron-builder --win --x64",
+		"build:all": "tsc && vite build && electron-builder --linux --win --x64",
 		"lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
 		"preview": "vite preview",
 		"rebuild": "electron-rebuild -f -w serialport"
@@ -35,6 +37,27 @@
 	},
 	"main": "dist-electron/main.js",
 	"build": {
+		"appId": "com.gazebuddy.hub",
+		"productName": "Gaze Buddy Hub",
+		"files": [
+			"dist/**/*",
+			"dist-electron/**/*"
+		],
+		"asarUnpack": [
+			"**/node_modules/serialport/**",
+			"**/node_modules/@serialport/**"
+		],
+		"linux": {
+			"target": ["AppImage", "deb"],
+			"category": "Utility"
+		},
+		"win": {
+			"target": "nsis"
+		},
+		"nsis": {
+			"oneClick": false,
+			"allowToChangeInstallationDirectory": true
+		},
 		"mac": {
 			"hardenedRuntime": true,
 			"entitlements": "build/entitlements.mac.plist",
