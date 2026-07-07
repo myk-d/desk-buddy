@@ -29,17 +29,12 @@
 #include <Adafruit_NeoPixel.h>
 
 // current animations
-#include "startup.h"
+#include "boot.h"
 #include "idle.h"
 #include "work.h"
-
-// tabbie animations - should be replaced
-#include "relax01.h"
-#include "love01.h"
-#include "angry_bitmap.h"
-
-// old idle animations - should be removed
-// #include "idle01.h"
+#include "happy.h"
+#include "angry.h"
+#include "love.h"
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Піни (перевірені на платі)
@@ -145,9 +140,11 @@ public:
       {
         uint16_t c = ((b >> (7 - (col & 7))) & 1) ? color : 0x0000;
         int start = col;
-        do {
+        do
+        {
           col++;
-          if ((col & 7) == 0 && col < w) b = pgm_read_byte(rowPtr + (col >> 3));
+          if ((col & 7) == 0 && col < w)
+            b = pgm_read_byte(rowPtr + (col >> 3));
         } while (col < w && (((b >> (7 - (col & 7))) & 1) ? color : 0x0000) == c);
         buf.fillRect(start, row, col - start, 1, c);
       }
@@ -166,7 +163,8 @@ public:
       {
         uint16_t c = row[x];
         int start = x++;
-        while (x < OLED_W && row[x] == c) x++;
+        while (x < OLED_W && row[x] == c)
+          x++;
         lcd.fillRect(OLED_DRAW_X + start * OLED_SCALE, OLED_DRAW_Y + y * OLED_SCALE,
                      (x - start) * OLED_SCALE, OLED_SCALE, c);
       }
@@ -202,7 +200,8 @@ public:
   // Повертає true, якщо це був останній кадр одноразової анімації
   bool tick(bool loop)
   {
-    if (!_frames) return false;
+    if (!_frames)
+      return false;
     if (millis() - _lastMs < _delayMs)
       return false;
     _lastMs = millis();
@@ -499,18 +498,24 @@ void enterState(GazeState s)
     setNeo(0, 150, 255);
     break;
   case ST_RELAX:
-    player.load(relax01_frames, RELAX01_FRAME_COUNT, RELAX01_FRAME_DELAY, 16, 64, 0x07E0); // зелений
+    activeIsColorPlayer = true;
+    colorPlayer.load(HAPPY_ANIM_frames, HAPPY_ANIM_sizes, HAPPY_ANIM_types,
+                     HAPPY_ANIM_FRAME_COUNT, HAPPY_ANIM_FPS,
+                     HAPPY_ANIM_CROP_X, HAPPY_ANIM_CROP_Y, HAPPY_ANIM_CROP_W, HAPPY_ANIM_CROP_H);
     setNeo(0, 200, 0);
     break;
   case ST_LOVE:
-    player.load(love01_frames, LOVE01_FRAME_COUNT, LOVE01_FRAME_DELAY, 16, 64, 0xF81F); // рожевий/magenta
+    activeIsColorPlayer = true;
+    colorPlayer.load(LOVE_ANIM_frames, LOVE_ANIM_sizes, LOVE_ANIM_types,
+                     LOVE_ANIM_FRAME_COUNT, LOVE_ANIM_FPS,
+                     LOVE_ANIM_CROP_X, LOVE_ANIM_CROP_Y, LOVE_ANIM_CROP_W, LOVE_ANIM_CROP_H);
     setNeo(255, 0, 150);
     break;
   case ST_ERROR:
-    // angry_bitmap — статична картинка, не анімація: малюємо один раз напряму
-    canvas.clear();
-    canvas.drawBitmap(angry_bitmap, ANGRY_WIDTH / 8, ANGRY_HEIGHT, 0xF800); // червоний
-    canvas.present();
+    activeIsColorPlayer = true;
+    colorPlayer.load(ANGRY_ANIM_frames, ANGRY_ANIM_sizes, ANGRY_ANIM_types,
+                     ANGRY_ANIM_FRAME_COUNT, ANGRY_ANIM_FPS,
+                     ANGRY_ANIM_CROP_X, ANGRY_ANIM_CROP_Y, ANGRY_ANIM_CROP_W, ANGRY_ANIM_CROP_H);
     setNeo(200, 0, 0);
     break;
   case ST_POMO_WORK:
