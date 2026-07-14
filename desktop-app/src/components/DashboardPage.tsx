@@ -100,80 +100,82 @@ export function DashboardPage({ connected, currentMode, deviceLog, logEndRef, on
 				</div>
 			</div>
 
-			<div
-				style={{
-					backgroundColor: colors.surface,
-					borderRadius: '12px',
-					border: `1px solid ${colors.border}`,
-					padding: '20px',
-					display: 'flex',
-					flexDirection: 'column',
-					gap: '10px',
-					flexGrow: 1,
-					minHeight: '180px',
-				}}
-			>
-				<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-					<span
-						style={{
-							fontSize: '14px',
-							color: colors.textMuted,
-							textTransform: 'uppercase',
-							fontWeight: 'bold',
-							letterSpacing: '0.5px',
-						}}
-					>
-						Device Log
-					</span>
-					{deviceLog.length > 0 && (
-						<button
-							onClick={onClearLog}
-							style={{
-								background: 'none',
-								border: 'none',
-								color: colors.textDisabled,
-								cursor: 'pointer',
-								fontSize: '12px',
-								padding: '2px 6px',
-							}}
-						>
-							Clear
-						</button>
-					)}
-				</div>
+			{import.meta.env.DEV && (
 				<div
 					style={{
+						backgroundColor: colors.surface,
+						borderRadius: '12px',
+						border: `1px solid ${colors.border}`,
+						padding: '20px',
+						display: 'flex',
+						flexDirection: 'column',
+						gap: '10px',
 						flexGrow: 1,
-						overflowY: 'auto',
-						fontFamily: 'monospace',
-						fontSize: '12px',
-						color: colors.textMuted,
-						lineHeight: '1.7',
+						minHeight: '180px',
 					}}
 				>
-					{deviceLog.length === 0 ? (
-						<span style={{ color: colors.border }}>No data received yet...</span>
-					) : (
-						deviceLog.map((line, i) => {
-							const isSent = line.startsWith('→');
-							const isMeta = line.startsWith('──');
-							return (
-								<div
-									key={i}
-									style={{
-										color: isSent ? colors.accent : isMeta ? colors.textDisabled : colors.textMuted,
-										fontStyle: isMeta ? 'italic' : 'normal',
-									}}
-								>
-									{!isSent && !isMeta && <span style={{ color: colors.border, userSelect: 'none' }}>&gt; </span>}
-									{line}
-								</div>
-							);
-						})
-					)}
-					<div ref={logEndRef} />
+					<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+						<span
+							style={{
+								fontSize: '14px',
+								color: colors.textMuted,
+								textTransform: 'uppercase',
+								fontWeight: 'bold',
+								letterSpacing: '0.5px',
+							}}
+						>
+							Device Log
+						</span>
+						{deviceLog.length > 0 && (
+							<button
+								onClick={onClearLog}
+								style={{
+									background: 'none',
+									border: 'none',
+									color: colors.textDisabled,
+									cursor: 'pointer',
+									fontSize: '12px',
+									padding: '2px 6px',
+								}}
+							>
+								Clear
+							</button>
+						)}
+					</div>
+					<div
+						style={{
+							flexGrow: 1,
+							overflowY: 'auto',
+							fontFamily: 'monospace',
+							fontSize: '12px',
+							color: colors.textMuted,
+							lineHeight: '1.7',
+						}}
+					>
+						{deviceLog.length === 0 ? (
+							<span style={{ color: colors.border }}>No data received yet...</span>
+						) : (
+							deviceLog.map((line, i) => {
+								const isSent = line.startsWith('→');
+								const isMeta = line.startsWith('──');
+								return (
+									<div
+										key={i}
+										style={{
+											color: isSent ? colors.accent : isMeta ? colors.textDisabled : colors.textMuted,
+											fontStyle: isMeta ? 'italic' : 'normal',
+										}}
+									>
+										{!isSent && !isMeta && <span style={{ color: colors.border, userSelect: 'none' }}>&gt; </span>}
+										{line}
+									</div>
+								);
+							})
+						)}
+						<div ref={logEndRef} />
+					</div>
 				</div>
-			</div>
+			)}
 		</>
 	);
 }

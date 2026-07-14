@@ -410,6 +410,7 @@ enum GazeState
 };
 GazeState currentState = ST_STARTUP;
 bool activeIsColorPlayer = false; // який плеєр тікати в loop() для поточного стану
+bool pomoLocked = false;          // true while pomodoro is running — blocks window-tracker #ANIM: commands
 
 // [НОВЕ] Pomodoro — повний екран, без анімації. Фон малюється один раз при
 // вході в стан (enterState), текст часу й прогрес-бар — окремо, при кожному
@@ -470,6 +471,9 @@ void enterState(GazeState s)
   // центральній області. Тому чистимо весь екран при БУДЬ-якій зміні
   // стану — інакше після Pomodoro навколо anімації лишався б старий фон/текст.
   lcd.fillScreen(0x0000);
+
+  // Auto-lock during pomodoro states; unlock when leaving them
+  pomoLocked = (s == ST_POMO_WORK || s == ST_POMO_BREAK);
 
   switch (s)
   {
@@ -566,6 +570,15 @@ void handlePacket(const String &cmd)
   if (cmd.startsWith("ANIM:"))
   {
     String name = cmd.substring(5);
+
+    // Pomodoro commands always go through; others are blocked while pomoLocked.
+    bool isPomoAnim = (name == "pomowork" || name == "pomobreak");
+    if (pomoLocked && !isPomoAnim)
+    {
+      Serial.println("🔒 pomo locked — ANIM ignored");
+      return;
+    }
+
     if (name == "startup")
     {
       enterState(ST_STARTUP);

@@ -19,6 +19,7 @@ export default function App() {
 	const [activePage, setActivePage] = useState<Page>('dashboard');
 	const [currentMode, setCurrentMode] = useState('IDLE');
 	const [pomodoroView, setPomodoroView] = useState<'list' | 'run'>('list');
+	const [updateReady, setUpdateReady] = useState(false);
 
 	const { status, connectedPath, deviceLog, setDeviceLog, logEndRef, sendPacket } = useSerial();
 
@@ -32,6 +33,7 @@ export default function App() {
 
 	useEffect(() => {
 		window.api.onModeChange(setCurrentMode);
+		window.api.onUpdateReady(() => setUpdateReady(true));
 	}, []);
 
 	useEffect(() => {
@@ -59,7 +61,27 @@ export default function App() {
 	}
 
 	return (
-		<div className="gb-shell" style={{ backgroundColor: colors.bg, color: colors.textPrimary, fontFamily: 'sans-serif' }}>
+		<div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+		{updateReady && (
+			<div style={{
+				display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px',
+				padding: '10px 20px', backgroundColor: '#1e3a5f', borderBottom: '1px solid #2563eb',
+				fontSize: '13px', color: '#93c5fd', flexShrink: 0,
+			}}>
+				<span>A new version has been downloaded and is ready to install.</span>
+				<button
+					onClick={() => window.api.installUpdate()}
+					style={{
+						padding: '5px 16px', borderRadius: '6px', border: 'none',
+						backgroundColor: '#2563eb', color: '#fff',
+						fontSize: '13px', fontWeight: '600', cursor: 'pointer',
+					}}
+				>
+					Restart to update
+				</button>
+			</div>
+		)}
+		<div className="gb-shell" style={{ backgroundColor: colors.bg, color: colors.textPrimary, fontFamily: 'sans-serif', flex: 1, minHeight: 0 }}>
 			<Sidebar
 				activePage={activePage}
 				onPageChange={setActivePage}
@@ -108,6 +130,7 @@ export default function App() {
 					)
 				)}
 			</main>
+		</div>
 		</div>
 	);
 }

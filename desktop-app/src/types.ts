@@ -25,9 +25,12 @@ declare global {
 	interface Window {
 		api: {
 			sendPacket: (packet: string) => void;
+			setPomodoroActive: (active: boolean) => void;
 			onStatusChange: (callback: (status: string, path?: string) => void) => void;
 			onData: (callback: (data: string) => void) => void;
 			onModeChange: (callback: (mode: string) => void) => void;
+			onUpdateReady: (callback: () => void) => void;
+			installUpdate: () => void;
 			todos: {
 				list: () => Promise<Todo[]>;
 				create: (data: Omit<Todo, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Todo>;

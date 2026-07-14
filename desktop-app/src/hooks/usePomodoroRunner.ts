@@ -56,6 +56,7 @@ export function usePomodoroRunner(sendPacket: (packet: string) => void) {
 			if (sess >= preset.sessions) {
 				setPhase('done');
 				setRunning(false);
+				window.api.setPomodoroActive(false);
 				sendRef.current('#ANIM:love\n');
 				if (preset.linkedTaskId) {
 					window.api.todos.update(preset.linkedTaskId, { completed: true });
@@ -82,6 +83,7 @@ export function usePomodoroRunner(sendPacket: (packet: string) => void) {
 		sessionRef.current = 1;
 		setSecondsLeft(preset.workMin * 60);
 		setRunning(true);
+		window.api.setPomodoroActive(true);
 		sendPacket('#ANIM:pomowork\n');
 	}
 
@@ -99,6 +101,7 @@ export function usePomodoroRunner(sendPacket: (packet: string) => void) {
 		setActivePreset(null);
 		setCurrentSession(1);
 		setSecondsLeft(0);
+		window.api.setPomodoroActive(false);
 		sendPacket('#ANIM:idle\n');
 	}
 

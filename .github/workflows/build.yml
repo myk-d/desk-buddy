@@ -18,18 +18,12 @@ jobs:
         run: npm install
         working-directory: desktop-app
 
-      - name: Build
-        run: npx tsc && npx vite build && npx electron-builder --mac
+      - name: Build and publish
+        run: npm run release:mac
         working-directory: desktop-app
         env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
-
-      - name: Upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: mac
-          path: desktop-app/dist/*.dmg
-          retention-days: 14
 
   build-linux-win:
     name: Linux + Windows
@@ -41,31 +35,16 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install dependencies (Wine for NSIS, libfuse2 for AppImage)
+      - name: Install system dependencies
         run: sudo apt-get install -y wine64 libfuse2
 
       - name: Install dependencies
         run: npm install
         working-directory: desktop-app
 
-      - name: Build
-        run: npm run build:all
+      - name: Build and publish
+        run: npm run release
         working-directory: desktop-app
         env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
-
-      - name: Upload Linux
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux
-          path: |
-            desktop-app/dist/*.AppImage
-            desktop-app/dist/*.deb
-          retention-days: 14
-
-      - name: Upload Windows
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows
-          path: desktop-app/dist/*.exe
-          retention-days: 14

@@ -84,7 +84,7 @@ export function Sidebar({ activePage, onPageChange, connected, connectedPath }: 
 				{connected ? 'DEVICE ONLINE' : 'CONNECTING...'}
 			</div>
 
-			{connectedPath && (
+			{import.meta.env.DEV && connectedPath && (
 				<div
 					style={{
 						fontSize: '11px',

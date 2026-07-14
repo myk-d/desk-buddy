@@ -3,6 +3,7 @@ import { exec, execSync } from 'child_process';
 import { dirname, join } from 'path';
 import { SerialPort } from 'serialport';
 import { fileURLToPath } from 'url';
+import { autoUpdater } from 'electron-updater';
 import { createJsonStore } from './store';
 import type { Todo, PomodoroPreset } from '../src/types';
 
@@ -16,6 +17,7 @@ let windowTrackerTimer: NodeJS.Timeout | null = null;
 let isConnecting = false;
 let isDeviceConnected = false;
 let lastCategory: Category | null = null;
+let isPomodoroActive = false;
 
 const TARGET_VID = '303a';
 
@@ -145,7 +147,7 @@ async function getActiveWindowApp(): Promise<string | null> {
 function startWindowTracker() {
 	let isChecking = false;
 	windowTrackerTimer = setInterval(async () => {
-		if (!isDeviceConnected || !activePort?.isOpen || isChecking) return;
+		if (!isDeviceConnected || !activePort?.isOpen || isChecking || isPomodoroActive) return;
 		isChecking = true;
 		try {
 			const appName = await getActiveWindowApp();
@@ -183,6 +185,11 @@ function createWindow(): void {
 		mainWindow?.show();
 		startAutoConnectScanner();
 		startWindowTracker();
+		if (app.isPackaged) {
+			autoUpdater.checkForUpdates().catch((err) =>
+				console.warn('[updater] check failed:', err.message),
+			);
+		}
 	});
 
 	if (process.env['VITE_DEV_SERVER_URL']) {
@@ -288,6 +295,17 @@ app.on('window-all-closed', () => {
 	if (process.platform !== 'darwin') {
 		app.quit();
 	}
+});
+
+autoUpdater.on('update-downloaded', () => {
+	mainWindow?.webContents.send('update:ready');
+});
+
+ipcMain.on('update:install', () => autoUpdater.quitAndInstall());
+
+ipcMain.on('pomodoro:setActive', (_, active: boolean) => {
+	isPomodoroActive = active;
+	if (!active) lastCategory = null; // re-sync window category after pomodoro ends
 });
 
 ipcMain.on('serial:send', (_, packet: string) => {
