@@ -1,5 +1,5 @@
 export type Screen = 'scanning' | 'success' | 'dashboard';
-export type Page = 'dashboard' | 'todo' | 'pomodoro';
+export type Page = 'dashboard' | 'todo' | 'pomodoro' | 'device';
 
 export interface Todo {
 	id: string;
@@ -31,6 +31,13 @@ declare global {
 			onModeChange: (callback: (mode: string) => void) => void;
 			onUpdateReady: (callback: () => void) => void;
 			installUpdate: () => void;
+			firmware: {
+				getDeviceVersion: () => Promise<string | null>;
+				checkUpdate: () => Promise<{ version: string; firmwareUrl: string } | null>;
+				flash: () => Promise<string>;
+				onProgress: (cb: (pct: number, status: string) => void) => void;
+				onError: (cb: (msg: string) => void) => void;
+			};
 			todos: {
 				list: () => Promise<Todo[]>;
 				create: (data: Omit<Todo, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Todo>;

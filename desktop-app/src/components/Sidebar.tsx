@@ -5,6 +5,7 @@ const NAV_ITEMS: [Page, string][] = [
 	['dashboard', 'Dashboard'],
 	['todo', 'Todo'],
 	['pomodoro', 'Pomodoro'],
+	['device', 'Device'],
 ];
 
 interface Props {

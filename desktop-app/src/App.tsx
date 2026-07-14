@@ -9,6 +9,7 @@ import { SuccessScreen } from './components/SuccessScreen';
 import { TodoPage } from './components/TodoPage';
 import { PomodoroListPage } from './components/PomodoroListPage';
 import { PomodoroRunner } from './components/PomodoroRunner';
+import { DevicePage } from './components/DevicePage';
 import { colors } from './theme';
 import type { Page, PomodoroPreset, Screen } from './types';
 
@@ -107,6 +108,7 @@ export default function App() {
 					/>
 				)}
 				{activePage === 'todo' && <TodoPage />}
+				{activePage === 'device' && <DevicePage connected={connected} />}
 				{activePage === 'pomodoro' && (
 					runner.activePreset && pomodoroView === 'run' ? (
 						<PomodoroRunner

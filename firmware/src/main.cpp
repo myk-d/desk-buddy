@@ -16,6 +16,7 @@
  *   #ANIM:love\n      — позитивний відгук
  *   #ANIM:error\n     — помилка (статична картинка, не анімація)
  *   #R\n              — програмний рестарт
+ *   #VERSION\n        — повернути версію прошивки
  *
  * Чому саме такий формат команд (а не однобуквені #I/#W/...):
  *   нові стани додаються без перепрошивки протоколу — просто новий
@@ -23,6 +24,8 @@
  */
 
 #include <Arduino.h>
+
+#define FIRMWARE_VERSION "0.1.0"
 
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
@@ -551,6 +554,12 @@ void handlePacket(const String &cmd)
     return;
   }
 
+  if (cmd == "VERSION")
+  {
+    Serial.println("FIRMWARE:" FIRMWARE_VERSION);
+    return;
+  }
+
   // [НОВЕ] #TIME:<секунди_залишилось>:<всього_секунд> — оновлює великий час
   // і прогрес-бар. Працює ТІЛЬКИ в режимах ST_POMO_WORK/ST_POMO_BREAK —
   // звичайний #ANIM:focus (без pomo) цю команду просто ігнорує.
@@ -683,6 +692,7 @@ void setup()
 
   enterState(ST_STARTUP);
   Serial.println("READY");
+  Serial.println("FIRMWARE:" FIRMWARE_VERSION);
 }
 
 void loop()

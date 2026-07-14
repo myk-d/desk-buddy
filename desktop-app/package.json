@@ -17,6 +17,7 @@
 	},
 	"dependencies": {
 		"electron-updater": "^6.8.9",
+		"esptool-js": "^0.6.0",
 		"react": "^18.2.0",
 		"react-dom": "^18.2.0",
 		"serialport": "^13.0.0"
@@ -73,7 +74,8 @@
 		"publish": {
 			"provider": "github",
 			"owner": "myk-d",
-			"repo": "desk-buddy"
+			"repo": "desk-buddy",
+			"releaseType": "release"
 		}
 	}
 }

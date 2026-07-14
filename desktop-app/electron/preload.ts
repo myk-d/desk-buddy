@@ -16,6 +16,15 @@ contextBridge.exposeInMainWorld('api', {
 		ipcRenderer.on('update:ready', () => callback());
 	},
 	installUpdate: () => ipcRenderer.send('update:install'),
+	firmware: {
+		getDeviceVersion: () => ipcRenderer.invoke('firmware:getDeviceVersion'),
+		checkUpdate: () => ipcRenderer.invoke('firmware:checkUpdate'),
+		flash: () => ipcRenderer.invoke('firmware:flash'),
+		onProgress: (cb: (pct: number, status: string) => void) =>
+			ipcRenderer.on('firmware:progress', (_, pct, status) => cb(pct, status)),
+		onError: (cb: (msg: string) => void) =>
+			ipcRenderer.on('firmware:error', (_, msg) => cb(msg)),
+	},
 	todos: {
 		list: () => ipcRenderer.invoke('todos:list'),
 		create: (data: unknown) => ipcRenderer.invoke('todos:create', data),

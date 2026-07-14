@@ -1,9 +1,11 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { exec, execSync } from 'child_process';
 import { dirname, join } from 'path';
+import https from 'https';
 import { SerialPort } from 'serialport';
 import { fileURLToPath } from 'url';
 import { autoUpdater } from 'electron-updater';
+import { triggerBootloaderReset, findEspPort, flashFirmware } from './flasher';
 import { createJsonStore } from './store';
 import type { Todo, PomodoroPreset } from '../src/types';
 
@@ -18,6 +20,8 @@ let isConnecting = false;
 let isDeviceConnected = false;
 let lastCategory: Category | null = null;
 let isPomodoroActive = false;
+let isFlashing = false;
+let deviceFirmwareVersion: string | null = null;
 
 const TARGET_VID = '303a';
 
@@ -202,13 +206,14 @@ function createWindow(): void {
 function notifyDisconnected() {
 	if (!isDeviceConnected) return;
 	isDeviceConnected = false;
-	lastCategory = null; // reset so reconnect immediately re-syncs state
+	lastCategory = null;
+	deviceFirmwareVersion = null;
 	mainWindow?.webContents.send('serial:status', 'disconnected');
 }
 
 function startAutoConnectScanner() {
 	autoConnectTimer = setInterval(async () => {
-		if ((activePort && activePort.isOpen) || isConnecting) return;
+		if ((activePort && activePort.isOpen) || isConnecting || isFlashing) return;
 
 		try {
 			const ports = await SerialPort.list();
@@ -245,7 +250,10 @@ function startAutoConnectScanner() {
 					mainWindow?.webContents.send('serial:status', 'connected', targetDevice.path);
 
 					thisPort.on('data', (data: Buffer) => {
-						mainWindow?.webContents.send('serial:data', data.toString());
+						const str = data.toString();
+						const match = str.match(/FIRMWARE:([^\r\n]+)/);
+						if (match) deviceFirmwareVersion = match[1].trim();
+						mainWindow?.webContents.send('serial:data', str);
 					});
 
 					thisPort.on('close', () => {
@@ -302,6 +310,110 @@ autoUpdater.on('update-downloaded', () => {
 });
 
 ipcMain.on('update:install', () => autoUpdater.quitAndInstall());
+
+// ── GitHub release helpers ────────────────────────────────────────────────────
+
+function httpsGet(url: string): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const req = https.get(
+			url,
+			{ headers: { 'User-Agent': 'gaze-buddy-hub', Accept: 'application/vnd.github.v3+json' } },
+			(res) => {
+				if (res.statusCode === 301 || res.statusCode === 302) {
+					httpsGet(res.headers.location!).then(resolve, reject);
+					return;
+				}
+				let body = '';
+				res.on('data', (c: string) => (body += c));
+				res.on('end', () => resolve(body));
+				res.on('error', reject);
+			},
+		);
+		req.on('error', reject);
+		req.setTimeout(10000, () => { req.destroy(); reject(new Error('Request timeout')); });
+	});
+}
+
+function httpsBinary(url: string): Promise<Buffer> {
+	return new Promise((resolve, reject) => {
+		const req = https.get(url, { headers: { 'User-Agent': 'gaze-buddy-hub' } }, (res) => {
+			if (res.statusCode === 301 || res.statusCode === 302) {
+				httpsBinary(res.headers.location!).then(resolve, reject);
+				return;
+			}
+			const chunks: Buffer[] = [];
+			res.on('data', (c: Buffer) => chunks.push(c));
+			res.on('end', () => resolve(Buffer.concat(chunks)));
+			res.on('error', reject);
+		});
+		req.on('error', reject);
+		req.setTimeout(60000, () => { req.destroy(); reject(new Error('Download timeout')); });
+	});
+}
+
+async function fetchLatestRelease(): Promise<{ version: string; firmwareUrl: string } | null> {
+	try {
+		const body = await httpsGet('https://api.github.com/repos/myk-d/desk-buddy/releases/latest');
+		const release = JSON.parse(body);
+		const version = release.tag_name?.replace(/^v/, '');
+		const asset = release.assets?.find(
+			(a: { name: string; browser_download_url: string }) => a.name === 'firmware.bin',
+		);
+		if (!version || !asset) return null;
+		return { version, firmwareUrl: asset.browser_download_url };
+	} catch {
+		return null;
+	}
+}
+
+// ── Firmware IPC ──────────────────────────────────────────────────────────────
+
+ipcMain.handle('firmware:getDeviceVersion', () => deviceFirmwareVersion);
+
+ipcMain.handle('firmware:checkUpdate', () => fetchLatestRelease());
+
+ipcMain.handle('firmware:flash', async () => {
+	if (isFlashing) throw new Error('Already flashing');
+
+	isFlashing = true;
+	const portPath = activePort?.path ?? null;
+
+	if (autoConnectTimer) { clearInterval(autoConnectTimer); autoConnectTimer = null; }
+	if (activePort?.isOpen) {
+		await new Promise<void>(res => activePort!.close(() => res()));
+		activePort = null;
+	}
+	notifyDisconnected();
+
+	try {
+		mainWindow?.webContents.send('firmware:progress', 1, 'Fetching release info...');
+		const release = await fetchLatestRelease();
+		if (!release) throw new Error('No firmware.bin found in latest GitHub release.');
+
+		mainWindow?.webContents.send('firmware:progress', 2, 'Downloading firmware...');
+		const bin = await httpsBinary(release.firmwareUrl);
+
+		mainWindow?.webContents.send('firmware:progress', 4, 'Triggering bootloader reset...');
+		if (portPath) await triggerBootloaderReset(portPath);
+
+		mainWindow?.webContents.send('firmware:progress', 5, 'Waiting for bootloader...');
+		const bootPath = await findEspPort();
+
+		await flashFirmware(bootPath, new Uint8Array(bin), (pct, status) => {
+			mainWindow?.webContents.send('firmware:progress', pct, status);
+		});
+
+		mainWindow?.webContents.send('firmware:progress', 100, `Firmware ${release.version} installed!`);
+		return release.version;
+	} catch (err: unknown) {
+		const msg = err instanceof Error ? err.message : String(err);
+		mainWindow?.webContents.send('firmware:error', msg);
+		throw err;
+	} finally {
+		isFlashing = false;
+		startAutoConnectScanner();
+	}
+});
 
 ipcMain.on('pomodoro:setActive', (_, active: boolean) => {
 	isPomodoroActive = active;

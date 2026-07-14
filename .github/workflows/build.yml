@@ -4,6 +4,43 @@ on:
   workflow_dispatch:
 
 jobs:
+  build-firmware:
+    name: Firmware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version
+        id: ver
+        run: echo "v=$(node -p "require('./desktop-app/package.json').version")" >> $GITHUB_OUTPUT
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build firmware
+        run: pio run
+        working-directory: firmware
+
+      - name: Write version file
+        run: echo "${{ steps.ver.outputs.v }}" > firmware-version.txt
+
+      - name: Publish firmware to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.v }}
+          name: v${{ steps.ver.outputs.v }}
+          draft: false
+          prerelease: false
+          files: |
+            firmware/.pio/build/esp32-s3-devkitc-1/firmware.bin
+            firmware-version.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
   build-mac:
     name: macOS
     runs-on: macos-latest
