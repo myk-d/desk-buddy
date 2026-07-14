@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 contextBridge.exposeInMainWorld("api", {
   sendPacket: (packet) => ipcRenderer.send("serial:send", packet),
+  setPomodoroActive: (active) => ipcRenderer.send("pomodoro:setActive", active),
   onStatusChange: (callback) => {
     ipcRenderer.on("serial:status", (_, status, path) => callback(status, path));
   },
@@ -9,6 +10,17 @@ contextBridge.exposeInMainWorld("api", {
   },
   onModeChange: (callback) => {
     ipcRenderer.on("tracker:mode", (_, mode) => callback(mode));
+  },
+  onUpdateReady: (callback) => {
+    ipcRenderer.on("update:ready", () => callback());
+  },
+  installUpdate: () => ipcRenderer.send("update:install"),
+  firmware: {
+    getDeviceVersion: () => ipcRenderer.invoke("firmware:getDeviceVersion"),
+    checkUpdate: () => ipcRenderer.invoke("firmware:checkUpdate"),
+    flash: () => ipcRenderer.invoke("firmware:flash"),
+    onProgress: (cb) => ipcRenderer.on("firmware:progress", (_, pct, status) => cb(pct, status)),
+    onError: (cb) => ipcRenderer.on("firmware:error", (_, msg) => cb(msg))
   },
   todos: {
     list: () => ipcRenderer.invoke("todos:list"),
