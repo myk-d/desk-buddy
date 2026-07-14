@@ -580,8 +580,8 @@ void handlePacket(const String &cmd)
   {
     String name = cmd.substring(5);
 
-    // Pomodoro commands always go through; others are blocked while pomoLocked.
-    bool isPomoAnim = (name == "pomowork" || name == "pomobreak");
+    // Pomo and idle always go through; other window-tracker anims are blocked while pomoLocked.
+    bool isPomoAnim = (name == "pomowork" || name == "pomobreak" || name == "idle");
     if (pomoLocked && !isPomoAnim)
     {
       Serial.println("🔒 pomo locked — ANIM ignored");

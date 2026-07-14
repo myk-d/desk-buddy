@@ -5,4 +5,4 @@ import "https";
 import "serialport";
 import "url";
 import "electron-updater";
-import "./main-7jsKCfiz.js";
+import "./main-CNgM1cPn.js";
