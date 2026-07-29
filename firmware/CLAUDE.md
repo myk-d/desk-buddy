@@ -5,7 +5,7 @@
 C++ firmware for the **Gaze Buddy** desktop gadget: an ESP32-S3 driving a 2.8" ILI9341 color TFT (the main face/eyes display) and an addressable NeoPixel for ambient color. It's controlled two ways at once:
 
 - **USB serial** (115200 8N1) from the companion Electron app (`../desktop-app/`) — the primary control path.
-- **WiFi**, once configured — the device hosts its own HTTP server so Claude Code hooks (and anything else) can update it directly, even with the desktop app fully closed.
+- **WiFi**, once configured — the device hosts its own HTTP server so OTA updates and ambient notifications keep working with the desktop app fully closed. Claude Code hooks *can* post here directly too, but in practice the desktop app should be kept running for accurate stats (see `../desktop-app/CLAUDE.md`).
 
 Board: ESP32-S3 N16R8 (16MB flash, 8MB PSRAM, partition table with dual OTA slots already provisioned — `board_build.partitions = default_16MB.csv`). Current usage is ~17% flash / ~19% RAM — plenty of headroom; the six animation-data headers dominate flash by themselves (~22%), not application logic.
 
@@ -50,7 +50,7 @@ Packets are `#COMMAND:args\n`. Current commands:
 
 ## WiFi HTTP server (once configured)
 
-Reachable at `http://gaze-buddy.local` (mDNS) once WiFi is set up via the desktop app (credentials are sent once over USB, never typed on the device). This is what lets Claude Code hooks — and anything else — update the device with the app fully closed.
+Reachable at `http://gaze-buddy.local` (mDNS) once WiFi is set up via the desktop app (credentials are sent once over USB, never typed on the device). This is what lets OTA updates and `/notify` work with the app fully closed — Claude Code stats, however, are more reliable with the desktop app left running.
 
 | Route | Auth | Purpose |
 |---|---|---|

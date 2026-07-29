@@ -279,7 +279,8 @@ export function DevicePage({ connected }: { connected: boolean }) {
 			<div>
 				<h2 className="text-xl font-bold text-stone-900">WiFi</h2>
 				<p className="mb-4 mt-1 text-sm text-stone-500">
-					Connect the device to your network so Claude Code updates keep working even when this app is closed
+					Connect the device to your network for OTA firmware updates and ambient notifications. Keep this app
+					running for accurate Claude Code session/usage stats on the device.
 				</p>
 			</div>
 

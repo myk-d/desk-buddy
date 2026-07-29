@@ -84,7 +84,8 @@ export function WifiSetup({ onConnected, onSkip }: WifiSetupProps) {
 					<div className="min-w-0 flex-1">
 						<div className="truncate text-sm font-medium text-stone-800">Connected to {status.ssid}</div>
 						<div className="text-xs text-stone-500">
-							Claude Code updates now reach the device directly, even when this app is closed.
+							Firmware updates and notifications now reach the device directly. Keep this app running
+							for accurate Claude Code stats.
 						</div>
 					</div>
 				</div>

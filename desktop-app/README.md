@@ -8,7 +8,7 @@ Electron companion app for the [Gaze Buddy](../firmware) desktop gadget (ESP32-S
 - **Dashboard** — manual emotion control + live device log
 - **Tasks / Calendar / Pomodoro** — local-only productivity tools that also drive the device's screen
 - **Claude Code integration** — live working/done/waiting state and session/weekly usage bars on the device, from a terminal session, the VS Code extension, or both
-- **WiFi provisioning** — connect the device to your network so Claude Code updates, OTA firmware updates, and ambient-status notifications keep working even when this app is closed
+- **WiFi provisioning** — connect the device to your network so OTA firmware updates and ambient-status notifications keep working even when this app is closed. Claude Code stats specifically need this app running to stay accurate.
 - **Firmware updates** — one click, over WiFi (OTA) when available, USB otherwise
 
 ## Development

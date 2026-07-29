@@ -9,7 +9,7 @@ Two parts, one repo:
 
 ## How it fits together
 
-The desktop app auto-connects to the device over USB and sends it simple text commands (`#ANIM:idle`, `#CLAUDE:working`, etc. — see [`firmware/CLAUDE.md`](firmware/CLAUDE.md) for the full protocol). Once you connect the device to WiFi (optional, from the app's Device page), it also hosts its own small HTTP server — so Claude Code hooks, OTA firmware updates, and ambient-status notifications keep working even when the desktop app is closed entirely.
+The desktop app auto-connects to the device over USB and sends it simple text commands (`#ANIM:idle`, `#CLAUDE:working`, etc. — see [`firmware/CLAUDE.md`](firmware/CLAUDE.md) for the full protocol). Once you connect the device to WiFi (optional, from the app's Device page), it also hosts its own small HTTP server — so OTA firmware updates and ambient-status notifications keep working even when the desktop app is closed entirely. Claude Code stats are the exception: keep the desktop app running for those to stay accurate (see `desktop-app/CLAUDE.md`).
 
 ```
 ┌─────────────────┐   USB serial    ┌──────────────────┐
