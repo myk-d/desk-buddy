@@ -1,72 +1,55 @@
 # Project: Gaze Buddy Hub (Companion App)
 
-## 🎯 Project Overview
+## Overview
 
-**Gaze Buddy Hub** is a desktop companion application designed for the **Gaze Buddy** smart desktop gadget, which is built on the **ESP32-S3** microcontroller.
+**Gaze Buddy Hub** is the Electron companion app for the Gaze Buddy desktop gadget (`../firmware/`). It auto-connects to the device over USB, drives its screen based on window-tracking/Claude Code/Pomodoro activity, and has grown into a small local productivity hub (Tasks, Calendar, Pomodoro) alongside the hardware-control features. It also handles WiFi-provisioning the device so it keeps working when the app itself is closed.
 
-The primary goal of the app is to automatically track the user's workflow context on their laptop (active windows, running processes, browser tabs) and control the robot's emotions on the desk in real time, as well as provide a clean interface for hardware diagnostics.
+## Technology stack
 
----
+- **Frontend:** React 18, TypeScript, Vite, Tailwind CSS v4 (`stone`/`brand` color idiom throughout — no `tailwind.config.js`, theme lives in `@theme` in `index.css`)
+- **Backend/system:** Electron 30, native ESM
+- **Hardware:** `serialport` (native module, marked `external` in `vite.config.ts` so Vite doesn't try to bundle it)
+- **No test suite** — `npx tsc --noEmit` is the primary automated correctness gate. No HTTP client library either (raw `http`/`https` throughout, deliberately, for consistency)
 
-## 💻 Technology Stack
+## Architecture
 
-- **Frontend:** React 18, TypeScript, Vite
-- **Backend / System Level:** Electron 30 (Node.js environment with native ES Modules support)
-- **Bundling & Build Tools:** `vite-plugin-electron/simple`
-- **Hardware Interaction:** `serialport` package (native C++ module for UART/USB CDC communication)
+1. **Main process (`electron/main.ts`)** — full OS/hardware access. Background auto-connect scanner (polls every ~2s for VID `303a`), the Claude Code hook HTTP server (`localhost:7842`), all persistence, all IPC handlers.
+2. **Preload (`electron/preload.ts`)** — `contextBridge` exposing a curated `window.api` surface; renderer has no direct Node access.
+3. **Renderer (`src/`)** — React app. Pages: Dashboard (manual emotion control + device log), Tasks, Calendar, Pomodoro, Device (firmware/Claude Code/WiFi settings).
 
----
+### Persistence
 
-## 🏗️ Architecture & Folder Structure
+- `createJsonStore<T>(filename)` (`electron/store.ts`) — CRUD collections, one flat JSON array file, full read-modify-write (`lists.json`, `tasks.json`, `events.json`, etc.).
+- `createJsonValueStore<T>(filename, default)` — single-value blobs (`wifi.json`, pomodoro settings/stats).
+- `useRemoteCollection` (`src/hooks/useRemoteCollection.ts`) — the renderer-side half: fetches once on mount, then diffs every local state change and pushes `create`/`update`/`remove` back. **This is one-way, renderer → main only.** Anything that originates in the main process (a poller, a WiFi-relayed update) needs an explicit push event (`mainWindow.webContents.send(...)` + `ipcRenderer.on` in preload) — there's no polling fallback anywhere in the hooks.
 
-The project is strictly divided into two primary processes:
+### IPC
 
-1. **Main Process (`electron/main.ts`)**
-    - Runs in the system Node.js environment.
-    - Has full access to the OS and hardware APIs.
-    - Manages the lifecycle of Electron windows.
-    - Implements a background interval scanner that checks USB ports every 2 seconds for the presence of the ESP32-S3 board (filtering by hardware `vendorId: "303a"`).
-    - Handles automatic Plug-and-Play connections without requiring user interaction.
+Every new surface is a three-file change: `electron/main.ts` (`ipcMain.handle`/`.on`), `electron/preload.ts` (bridge), `src/types.ts` (`Window.api` type). A typecheck failure naming a `window.api.*` property almost always means one of the three was missed.
 
-2. **Preload Script (`electron/preload.ts`)**
-    - A secure, isolated context bridge between Node.js and the browser renderer engine.
-    - Exposes safe Inter-Process Communication (IPC) methods to the global `window.api` object.
+## Serial protocol
 
-3. **Renderer Process (`src/`)**
-    - A standard React + TypeScript application.
-    - Has no direct access to Node.js; communicates with the hardware exclusively through `window.api`.
-    - Renders the status monitor and the manual emotion emulation dashboard.
+See `../firmware/CLAUDE.md` for the authoritative, current command list (`#ANIM:`, `#CLAUDE:`, `#USAGE:`, `#TIME:`, `#WIFI:*`, `#VERSION`, `#R`) — don't duplicate it here where it can drift out of sync; the firmware doc comment in `main.cpp` is the source of truth.
 
----
+## Claude Code integration
 
-## 🛰️ Data Transfer Protocol (UART Serial)
+The Device page can show live working/done/waiting state and session/weekly usage bars, driven three different ways depending on what's available:
 
-Communication with the ESP32-S3 board occurs over a USB cable at a baud rate of **115200**.
-Data exchange is strictly packet-based, wrapped in envelopes with a start frame marker (`#`) and an end frame marker (`\n`):
+- **Hooks** (`PreToolUse`/`Stop`/`Notification`, written to `~/.claude/hooks/` by `setupClaudeHooks()` in `main.ts`) fire from *both* a terminal session and the VS Code extension — these drive the state indicator.
+- **`statusLine`** (also hook-generated) only ever fires from a real terminal — it's the source of the live usage-percentage data, and carries `$CLAUDE_CODE_ENTRYPOINT` so the UI can show *which* front-end most recently fired.
+- **Account-usage API poll** (`pollClaudeUsageFromApi()`, every 6 min) — a fallback specifically for the VS Code-extension case, reading `~/.claude/.credentials.json`'s OAuth token and hitting Anthropic's own (undocumented) usage endpoint directly. App-process-only by design — it does not run on the device, so it doesn't help once the app is closed; that case is covered by a real terminal session's `statusLine` posting straight to the device instead (see below).
 
-| Command     | Packet | Device Screen Behavior Description                                                        |
-| :---------- | :----- | :---------------------------------------------------------------------------------------- |
-| **IDLE**    | `#I\n` | Standard state. Round cyan eyes, random blinking, and smooth panning to look around.      |
-| **WORKING** | `#W\n` | Concentration state. Eyes narrow and move rapidly horizontally (simulating reading code). |
-| **SUCCESS** | `#S\n` | Joy emotion. Eyes light up green and turn into satisfied, upward-curved arcs.             |
-| **ERROR**   | `#E\n` | Failure/error state. Eyes turn into bright red crosshairs.                                |
-| **RESET**   | `#R\n` | Software reset command. Instructs the board to execute a hard reboot via `ESP.restart()`. |
+Hooks target either `localhost:7842` (this app's own relay server) or `gaze-buddy.local` directly (once WiFi is configured, with an `X-Gaze-Token` header) — `setupClaudeHooks()` regenerates them on every WiFi connect/forget so they always point at the right place. See `docs/claude-code-integration.md` for the user-facing version of this.
 
----
+## WiFi provisioning
 
-## 🚦 Current Implementation Status
+Opt-in via a welcome screen on first pairing (or later from the Device page). Credentials are entered in the app and sent to the device once over the existing USB link — **never typed on the device**. Once connected, the device hosts its own HTTP server (see `../firmware/CLAUDE.md`) so hooks, OTA updates, and the generic `/notify` endpoint all work with the app fully closed.
 
-- [x] Stable `Vite + React + TS + Electron` boilerplate set up with native ESM support.
-- [x] Configured `vite.config.ts` to treat `serialport` as an `external` dependency (preventing Vite from bundling native binaries).
-- [x] Implemented background auto-connect to ESP32-S3 via VID (`303a`).
-- [x] Built the initial Dashboard UI featuring a manual control panel for testing emotions.
-- [ ] **Next Step:** Integrate a system-level service to automatically track active windows in the OS (Linux/Ubuntu) and map them to `WORKING` / `IDLE` states.
+## Firmware updates
 
----
+"Update Firmware" on the Device page tries **OTA over WiFi first** (if configured — `otaFlash()` in `electron/flasher.ts`, POSTs to the device's `/update`) and only falls back to USB. The USB path itself is non-standard: this device's Linux USB-CDC driver doesn't support the DTR/RTS toggling `esptool`'s default reset relies on, so `flashFirmware()` uses a 1200-baud-touch trick instead (`triggerBootloaderReset()`) before flashing with `esptool-js`. Releases are cut via the existing CI pipeline (`.github/workflows/build.yml`, `workflow_dispatch`) keyed off `package.json`'s version — see the `release-cutter` agent (repo root `.claude/agents/`) before attempting a manual release.
 
-## 🗺️ Future Roadmap
+## Known gotchas
 
-Planned core features to expand the application into a full productivity hub:
-
-- **Built-in Task Tracker:** A local todo/task management system where task status changes (e.g., finishing a major programming task) trigger the `#S\n` (SUCCESS) or `#E\n` (ERROR) hardware animations.
-- **Calendar Integration:** An event calendar to monitor upcoming meetings and schedule pomodoro/focus sessions. Gaze Buddy will adjust its behavior and expressions ahead of or during scheduled events to keep the user on track.
+- **Stale dev builds**: Vite's incremental rebuild can catch an edit mid-flight and produce a genuinely broken `dist-electron/main-<hash>.js` that throws a `ReferenceError` for something that's clearly correct in source. Fix is `rm -rf dist-electron dist && npx tsc && npx vite build`, not more debugging — see `.claude/skills/run-app/` (repo root).
+- **`cwd` can reset** between tool calls in long sessions — `cd desktop-app` before running `tsc`/`pio` if a command unexpectedly fails with an unrelated error.
