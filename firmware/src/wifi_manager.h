@@ -1,32 +1,27 @@
 #pragma once
 
 // ═════════════════════════════════════════════════════════════════════════════
-// [НОВЕ] WiFi + локальний HTTP-сервер для Claude Code — опціонально, лише
+// [НОВЕ] WiFi — підключення/сканування/NVS-креденшели/mDNS. Опціонально, лише
 // якщо користувач підключив мережу через desktop-застосунок (креденшели
 // ніколи не вводяться на самому пристрої). Дозволяє hook-скриптам Claude
 // Code оновлювати екран напряму, навіть коли застосунок закритий.
 //
-// Формат тіла запиту (POST /claude-state, /claude-usage) — той самий JSON,
-// що застосунок уже POST'ить на свій localhost:7842, тож hook-скрипти не
-// потребують різної логіки залежно від цілі — лише інша адреса/заголовок.
-// Розбір тут — просте indexOf/substring (як і для #USAGE: серійного
-// протоколу), без залежності ArduinoJson: формат фіксований і контролюється
-// нами самими з обох боків.
+// HTTP-маршрути й обробники — див. web_server.h.
 // ═════════════════════════════════════════════════════════════════════════════
 
 #include <WiFi.h>
-#include <WebServer.h>
 #include <Preferences.h>
 #include <ESPmDNS.h>
+#include <time.h>
 
-// Визначені пізніше в main.cpp — HTTP-обробники нижче ведуть до того самого
-// коду, що й серійні команди #CLAUDE:/#USAGE:.
-void applyClaudeState(int sub);
-void applyClaudeUsage(float fiveHourPct, long fiveHourSecs, float sevenDayPct, long sevenDaySecs);
+// web_server.h's /status.json handler calls this — defined further down in
+// this same file, forward-declared here so it resolves (single translation
+// unit, same precedent as applyClaudeState/applyClaudeUsage in main.cpp).
+bool ntpSynced();
+
+#include "web_server.h"
 
 Preferences wifiPrefs;
-WebServer gazeServer(80);
-String gazeToken = "";
 bool wifiConnecting = false;
 unsigned long wifiConnectStartMs = 0;
 const unsigned long WIFI_CONNECT_TIMEOUT_MS = 15000;
@@ -53,95 +48,13 @@ void wifiScanStart()
   wifiScanPending = true;
 }
 
-// Витягує рядкове значення "key":"value" з фіксованого JSON-тіла.
-String jsonExtractString(const String &body, const String &key)
+// True once NTP has actually synced — ESP32's clock sits near epoch 0 until
+// then, so this is just a sanity threshold (~Nov 2023), not a fixed target.
+// configTime() itself is fire-and-forget/non-blocking; sync happens in the
+// background over the next few seconds after WiFi connects.
+bool ntpSynced()
 {
-  String needle = "\"" + key + "\":\"";
-  int start = body.indexOf(needle);
-  if (start == -1)
-    return "";
-  start += needle.length();
-  int end = body.indexOf('"', start);
-  if (end == -1)
-    return "";
-  return body.substring(start, end);
-}
-
-// Витягує числове значення "key":123.45 (або null → fallback).
-float jsonExtractNumber(const String &body, const String &key, float fallback)
-{
-  String needle = "\"" + key + "\":";
-  int start = body.indexOf(needle);
-  if (start == -1)
-    return fallback;
-  start += needle.length();
-  int end = start;
-  while (end < (int)body.length() && (isDigit(body[end]) || body[end] == '-' || body[end] == '.'))
-    end++;
-  if (end == start)
-    return fallback;
-  return body.substring(start, end).toFloat();
-}
-
-bool checkGazeToken()
-{
-  if (gazeToken.length() == 0)
-    return false; // WiFi не налаштовано через наш протокол — відхиляємо все
-  return gazeServer.header("X-Gaze-Token") == gazeToken;
-}
-
-void handleClaudeStateHttp()
-{
-  if (!checkGazeToken())
-  {
-    gazeServer.send(403, "text/plain", "forbidden");
-    return;
-  }
-  String body = gazeServer.arg("plain");
-  String state = jsonExtractString(body, "state");
-  int subCode = -1;
-  if (state == "idle")
-    subCode = 0;
-  else if (state == "working")
-    subCode = 1;
-  else if (state == "done")
-    subCode = 2;
-  else if (state == "waiting")
-    subCode = 3;
-  if (subCode >= 0)
-  {
-    applyClaudeState(subCode);
-    // Relay back over USB so the app's own UI stays in sync if it's open.
-    Serial.print("CLAUDE_RELAY:");
-    Serial.println(state);
-  }
-  gazeServer.send(200, "text/plain", "ok");
-}
-
-void handleClaudeUsageHttp()
-{
-  if (!checkGazeToken())
-  {
-    gazeServer.send(403, "text/plain", "forbidden");
-    return;
-  }
-  String body = gazeServer.arg("plain");
-  float fiveHourPct = jsonExtractNumber(body, "fiveHourPct", -1);
-  long fiveHourSecs = (long)jsonExtractNumber(body, "fiveHourSecsLeft", 0);
-  float sevenDayPct = jsonExtractNumber(body, "sevenDayPct", -1);
-  long sevenDaySecs = (long)jsonExtractNumber(body, "sevenDaySecsLeft", 0);
-  applyClaudeUsage(fiveHourPct, fiveHourSecs, sevenDayPct, sevenDaySecs);
-
-  Serial.print("USAGE_RELAY:");
-  Serial.print(fiveHourPct);
-  Serial.print(",");
-  Serial.print(fiveHourSecs);
-  Serial.print(",");
-  Serial.print(sevenDayPct);
-  Serial.print(",");
-  Serial.println(sevenDaySecs);
-
-  gazeServer.send(200, "text/plain", "ok");
+  return time(nullptr) > 1700000000;
 }
 
 void wifiLoadCredentials(String &ssid, String &password, String &token)
@@ -209,14 +122,8 @@ void wifiPoll()
         {
           MDNS.addService("http", "tcp", 80);
         }
-        // WebServer only exposes headers explicitly registered here — without
-        // this, server.header("X-Gaze-Token") always returns "" and every
-        // request gets rejected as forbidden, even with the correct token.
-        const char *headerKeys[] = {"X-Gaze-Token"};
-        gazeServer.collectHeaders(headerKeys, 1);
-        gazeServer.on("/claude-state", HTTP_POST, handleClaudeStateHttp);
-        gazeServer.on("/claude-usage", HTTP_POST, handleClaudeUsageHttp);
-        gazeServer.begin();
+        configTime(0, 0, "pool.ntp.org"); // async — see ntpSynced()
+        webServerBegin();
         gazeServerStarted = true;
       }
       Serial.print("WIFI_STATUS:connected,");

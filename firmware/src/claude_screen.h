@@ -203,6 +203,10 @@ void enterState(GazeState s)
     else
       setNeo(120, 120, 120);
     break;
+  case ST_NOTIFY:
+    drawNotifyScreen();
+    setNeo((notifyColor >> 11 & 0x1F) << 3, (notifyColor >> 5 & 0x3F) << 2, (notifyColor & 0x1F) << 3);
+    break;
   }
 }
 

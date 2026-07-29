@@ -283,9 +283,52 @@ export function DevicePage({ connected }: { connected: boolean }) {
 				</p>
 			</div>
 
-			<div className="w-full max-w-130 min-w-0 rounded-2xl border border-stone-200 bg-white p-7">
+			<div className="flex w-full max-w-130 min-w-0 flex-col gap-5 rounded-2xl border border-stone-200 bg-white p-7">
 				<WifiSetup />
+				<NotifyTester />
 			</div>
+		</div>
+	);
+}
+
+// Minimal proof that the generic /notify endpoint works end-to-end (device
+// shows it, then reverts to idle) — not a real Task/Calendar integration,
+// just exercises the same path that future features would use.
+function NotifyTester() {
+	const [wifiConfigured, setWifiConfigured] = useState(false);
+	const [sending, setSending] = useState(false);
+	const [result, setResult] = useState<'ok' | 'error' | null>(null);
+
+	useEffect(() => {
+		window.api.wifi.status().then((s) => setWifiConfigured(s.configured));
+	}, []);
+
+	if (!wifiConfigured) return null;
+
+	async function send() {
+		setSending(true);
+		setResult(null);
+		try {
+			await window.api.wifi.sendNotify('Test', 'Hello from Gaze Buddy Hub!');
+			setResult('ok');
+		} catch {
+			setResult('error');
+		} finally {
+			setSending(false);
+		}
+	}
+
+	return (
+		<div className="flex items-center gap-3 border-t border-stone-100 pt-4">
+			<button
+				onClick={send}
+				disabled={sending}
+				className="cursor-pointer rounded-full border border-stone-200 px-4 py-1.5 text-sm text-stone-600 hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50"
+			>
+				{sending ? 'Sending…' : 'Send test notification'}
+			</button>
+			{result === 'ok' && <span className="text-xs text-emerald-600">Sent — check the device.</span>}
+			{result === 'error' && <span className="text-xs text-red-600">Could not reach the device.</span>}
 		</div>
 	);
 }

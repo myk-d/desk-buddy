@@ -10,7 +10,7 @@ import { SerialPort } from 'serialport';
 import { fileURLToPath } from 'url';
 import electronUpdaterPkg from 'electron-updater';
 const { autoUpdater } = electronUpdaterPkg;
-import { triggerBootloaderReset, findEspPort, flashFirmware } from './flasher';
+import { triggerBootloaderReset, findEspPort, flashFirmware, otaFlash } from './flasher';
 import { createJsonStore, createJsonValueStore } from './store';
 import type { TaskList, Section, Task, Tag, CalendarEvent, PomodoroPreset, PomodoroSettings, PomodoroStats, WifiConfig, WifiNetwork, WifiConnectResult, WifiStatus } from '../src/types';
 
@@ -493,6 +493,11 @@ function notifyDisconnected() {
 }
 
 function startAutoConnectScanner() {
+	// Idempotent — the OTA flash path (firmware:flash) can reach the
+	// finally-block call to this without ever having cleared a still-running
+	// timer (USB teardown is skipped entirely when OTA succeeds), which would
+	// otherwise leak a duplicate interval.
+	if (autoConnectTimer) clearInterval(autoConnectTimer);
 	autoConnectTimer = setInterval(async () => {
 		if ((activePort && activePort.isOpen) || isConnecting || isFlashing) return;
 
@@ -805,6 +810,32 @@ function registerWifiIpc() {
 		if (activePort?.isOpen) activePort.write('#WIFI:FORGET\n');
 		if (isClaudeHooksSetup()) setupClaudeHooks();
 	});
+
+	// Exercises the generic /notify endpoint directly over WiFi — proves the
+	// ambient-status feature end-to-end without any Task/Calendar wiring yet.
+	ipcMain.handle('wifi:sendNotify', (_, title: string, message: string) => {
+		return new Promise<void>((resolve, reject) => {
+			const wifi = wifiStore?.get() ?? DEFAULT_WIFI_CONFIG;
+			if (!wifi.configured || !wifi.token) { reject(new Error('WiFi not configured')); return; }
+			const payload = JSON.stringify({ title, message, color: 0xD3AB, durationMs: 6000 });
+			const req = http.request({
+				hostname: 'gaze-buddy.local', port: 80, path: '/notify', method: 'POST',
+				headers: {
+					'X-Gaze-Token': wifi.token,
+					'Content-Type': 'application/json',
+					'Content-Length': Buffer.byteLength(payload),
+				},
+			}, (res) => {
+				res.resume();
+				if (res.statusCode === 200) resolve();
+				else reject(new Error(`Device responded ${res.statusCode}`));
+			});
+			req.on('error', (err) => reject(err));
+			req.setTimeout(5000, () => { req.destroy(); reject(new Error('Request timed out')); });
+			req.write(payload);
+			req.end();
+		});
+	});
 }
 
 // Electron's app.setLoginItemSettings/getLoginItemSettings is macOS/Windows
@@ -971,14 +1002,6 @@ ipcMain.handle('firmware:flash', async () => {
 	if (isFlashing) throw new Error('Already flashing');
 
 	isFlashing = true;
-	const portPath = activePort?.path ?? null;
-
-	if (autoConnectTimer) { clearInterval(autoConnectTimer); autoConnectTimer = null; }
-	if (activePort?.isOpen) {
-		await new Promise<void>(res => activePort!.close(() => res()));
-		activePort = null;
-	}
-	notifyDisconnected();
 
 	try {
 		mainWindow?.webContents.send('firmware:progress', 1, 'Fetching release info...');
@@ -987,6 +1010,33 @@ ipcMain.handle('firmware:flash', async () => {
 
 		mainWindow?.webContents.send('firmware:progress', 2, 'Downloading firmware...');
 		const bin = await httpsBinary(release.firmwareUrl);
+
+		// Prefer OTA over WiFi when available — sidesteps the USB
+		// bootloader-reset dance entirely (this device's Linux USB-CDC driver
+		// doesn't support the DTR/RTS toggling esptool needs, forcing the
+		// 1200-baud-touch workaround below). Only falls back to USB if WiFi
+		// isn't configured or the OTA attempt itself fails.
+		const wifi = wifiStore?.get() ?? DEFAULT_WIFI_CONFIG;
+		if (wifi.configured && wifi.token) {
+			try {
+				await otaFlash('gaze-buddy.local', wifi.token, Buffer.from(bin), (pct, status) => {
+					mainWindow?.webContents.send('firmware:progress', pct, status);
+				});
+				return release.version;
+			} catch (otaErr: unknown) {
+				console.warn('[firmware] OTA flash failed, falling back to USB:', otaErr instanceof Error ? otaErr.message : otaErr);
+			}
+		}
+
+		// USB fallback — only tear down the live serial connection now that
+		// we actually need it, not preemptively before knowing OTA would work.
+		const portPath = activePort?.path ?? null;
+		if (autoConnectTimer) { clearInterval(autoConnectTimer); autoConnectTimer = null; }
+		if (activePort?.isOpen) {
+			await new Promise<void>(res => activePort!.close(() => res()));
+			activePort = null;
+		}
+		notifyDisconnected();
 
 		mainWindow?.webContents.send('firmware:progress', 4, 'Triggering bootloader reset...');
 		if (portPath) await triggerBootloaderReset(portPath);

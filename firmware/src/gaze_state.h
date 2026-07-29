@@ -15,7 +15,8 @@ enum GazeState
   ST_POMO_WORK,
   ST_POMO_BREAK,
   ST_POMO_LONGBREAK,
-  ST_CLAUDE
+  ST_CLAUDE,
+  ST_NOTIFY
 };
 GazeState currentState = ST_STARTUP;
 bool activeIsColorPlayer = false; // який плеєр тікати в loop() для поточного стану
@@ -33,3 +34,11 @@ float claudeFiveHourPct = -1;  // -1 = ще немає даних
 float claudeSevenDayPct = -1;
 long claudeFiveHourSecsLeft = -1;  // секунд до скидання ліміту (рахує додаток, не прошивка)
 long claudeSevenDaySecsLeft = -1;
+
+// [НОВЕ] Generic ambient-status notification (/notify) — same auto-revert
+// pattern as the Claude "done" screen, just not tied to Claude Code at all.
+String notifyTitle = "";
+String notifyMessage = "";
+uint16_t notifyColor = 0xFFFF;
+unsigned long notifyAtMs = 0;
+unsigned long notifyDurationMs = 5000;

@@ -67,5 +67,6 @@ contextBridge.exposeInMainWorld('api', {
 		connect: (ssid: string, password: string) => ipcRenderer.invoke('wifi:connect', ssid, password),
 		status: () => ipcRenderer.invoke('wifi:status'),
 		forget: () => ipcRenderer.invoke('wifi:forget'),
+		sendNotify: (title: string, message: string) => ipcRenderer.invoke('wifi:sendNotify', title, message),
 	},
 });

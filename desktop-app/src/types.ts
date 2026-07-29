@@ -232,6 +232,7 @@ declare global {
 				connect: (ssid: string, password: string) => Promise<WifiConnectResult>;
 				status: () => Promise<WifiStatus>;
 				forget: () => Promise<void>;
+				sendNotify: (title: string, message: string) => Promise<void>;
 			};
 		};
 	}

@@ -79,7 +79,14 @@ void applyClaudeUsage(float fiveHourPct, long fiveHourSecs, float sevenDayPct, l
 #include "wifi_manager.h"
 
 #include "pomodoro_screen.h"  // drawPomodoroBackground/drawPomodoroTime
+
+// enterState() (claude_screen.h) calls drawNotifyScreen() — defined below in
+// notify_screen.h, which itself needs enterState() (calls it from
+// applyNotify()). Same mutual-dependency shape as applyClaudeState/
+// applyClaudeUsage above: forward-declare the one that's needed first.
+void drawNotifyScreen();
 #include "claude_screen.h"    // drawClaudeScreen/drawClaudeUsageBars/enterState/applyClaudeState/applyClaudeUsage
+#include "notify_screen.h"    // drawNotifyScreen/applyNotify/pollNotifyTimeout
 #include "serial_protocol.h"  // handlePacket/readSerial
 
 void setup()
@@ -114,9 +121,10 @@ void loop()
   readSerial();
   wifiPoll(); // завжди, незалежно від currentState — інакше HTTP-запити не обробляються під час Pomodoro/Claude екранів
   pollClaudeDoneTimeout(); // так само — інакше "Done" ніколи не згасне без запущеного застосунку
+  pollNotifyTimeout(); // так само — інакше notify-екран ніколи не згасне без запущеного застосунку
 
-  // [НОВЕ] Pomodoro / Claude Code full-screen — без анімації, нічого тікати не потрібно
-  if (currentState == ST_POMO_WORK || currentState == ST_POMO_BREAK || currentState == ST_POMO_LONGBREAK || currentState == ST_CLAUDE)
+  // [НОВЕ] Pomodoro / Claude Code / Notify full-screen — без анімації, нічого тікати не потрібно
+  if (currentState == ST_POMO_WORK || currentState == ST_POMO_BREAK || currentState == ST_POMO_LONGBREAK || currentState == ST_CLAUDE || currentState == ST_NOTIFY)
     return;
 
   bool loopAnim = (currentState != ST_STARTUP); // стартова анімація грає лише раз

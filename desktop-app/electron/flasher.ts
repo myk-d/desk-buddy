@@ -1,3 +1,4 @@
+import http from 'http';
 import { SerialPort } from 'serialport';
 import { ESPLoader, Transport } from 'esptool-js';
 
@@ -119,4 +120,75 @@ export async function flashFirmware(
 	await loader.after('hard_reset');
 	await transport.disconnect();
 	onProgress(100, 'Done!');
+}
+
+// OTA flash over WiFi — the device's own /update endpoint (web_server.h),
+// sidestepping the whole USB bootloader-reset dance above entirely (this
+// device's Linux USB-CDC driver doesn't support the DTR/RTS toggling esptool
+// needs). Must be sent as multipart/form-data — the firmware's WebServer
+// upload callback is the only path there that streams the body incrementally
+// without buffering the whole multi-hundred-KB image into RAM first.
+const OTA_BOUNDARY = '----GazeBuddyOTABoundary7f3a9c2e';
+
+export async function otaFlash(
+	host: string,
+	token: string,
+	firmware: Buffer,
+	onProgress: (pct: number, status: string) => void,
+): Promise<void> {
+	const head = Buffer.from(
+		`--${OTA_BOUNDARY}\r\n` +
+		'Content-Disposition: form-data; name="firmware"; filename="firmware.bin"\r\n' +
+		'Content-Type: application/octet-stream\r\n\r\n',
+	);
+	const tail = Buffer.from(`\r\n--${OTA_BOUNDARY}--\r\n`);
+	const totalLength = head.length + firmware.length + tail.length;
+
+	onProgress(5, 'Uploading over WiFi...');
+
+	await new Promise<void>((resolve, reject) => {
+		const req = http.request(
+			{
+				hostname: host,
+				port: 80,
+				path: '/update',
+				method: 'POST',
+				headers: {
+					'X-Gaze-Token': token,
+					'Content-Type': `multipart/form-data; boundary=${OTA_BOUNDARY}`,
+					'Content-Length': totalLength,
+				},
+				timeout: 60000,
+			},
+			(res) => {
+				let body = '';
+				res.on('data', (c: string) => (body += c));
+				res.on('end', () => {
+					if (res.statusCode === 200) resolve();
+					else reject(new Error(`Device rejected update (${res.statusCode}): ${body}`));
+				});
+			},
+		);
+		req.on('error', reject);
+		req.on('timeout', () => { req.destroy(); reject(new Error('Upload timed out')); });
+
+		req.write(head);
+		const CHUNK_SIZE = 8192;
+		let sent = 0;
+		const writeNext = () => {
+			if (sent >= firmware.length) {
+				req.end(tail);
+				return;
+			}
+			const chunk = firmware.subarray(sent, Math.min(sent + CHUNK_SIZE, firmware.length));
+			sent += chunk.length;
+			const pct = 5 + Math.round((sent / firmware.length) * 90);
+			onProgress(pct, `Uploading ${pct}%`);
+			if (req.write(chunk)) writeNext();
+			else req.once('drain', writeNext);
+		};
+		writeNext();
+	});
+
+	onProgress(100, 'Done! Device is rebooting...');
 }
