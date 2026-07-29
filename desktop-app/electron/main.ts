@@ -52,6 +52,14 @@ let isPomodoroActive = false;
 let isFlashing = false;
 let deviceFirmwareVersion: string | null = null;
 
+// The firmware sometimes writes a single logical line across two separate
+// Serial.print()/println() calls with a real gap between them (e.g.
+// "WIFI_NETWORKS:" printed immediately, the actual list only ~6s later once
+// the blocking scan finishes) — a raw 'data' event can therefore contain only
+// half a line. Buffered across events and only matched once a full line
+// (terminated by \n) has arrived, so regexes never see truncated data.
+let serialLineBuffer = '';
+
 type ClaudeCodeState = 'idle' | 'working' | 'done' | 'waiting';
 let claudeCodeState: ClaudeCodeState = 'idle';
 let claudeResetTimer: NodeJS.Timeout | null = null;
@@ -153,12 +161,21 @@ process.stdin.on('end', () => {
     process.stdout.write(line);
 
     if (rl) {
+        // Two receivers, two contracts: the app's own localhost:7842 endpoint
+        // does epoch-to-countdown math itself (has a real clock), so it wants
+        // the raw resets_at epoch — but the device has no RTC and just
+        // displays whatever duration it's given, so it needs secsLeft already
+        // computed. Send both; each side reads only the field it understands.
+        const now = Math.floor(Date.now() / 1000);
+        const secsLeft = (resetsAt) => (typeof resetsAt === 'number' ? Math.max(0, Math.round(resetsAt - now)) : null);
         const payload = JSON.stringify({
             hasData: true,
             fiveHourPct: fiveHour?.used_percentage ?? null,
             fiveHourResetsAt: fiveHour?.resets_at ?? null,
+            fiveHourSecsLeft: secsLeft(fiveHour?.resets_at),
             sevenDayPct: sevenDay?.used_percentage ?? null,
             sevenDayResetsAt: sevenDay?.resets_at ?? null,
+            sevenDaySecsLeft: secsLeft(sevenDay?.resets_at),
         });
         const req = http.request({
             hostname: '${target.host}', port: ${target.port}, path: '/claude-usage', method: 'POST',
@@ -514,42 +531,50 @@ function startAutoConnectScanner() {
 					mainWindow?.webContents.send('serial:status', 'connected', targetDevice.path);
 
 					thisPort.on('data', (data: Buffer) => {
-						const str = data.toString();
-						const fwMatch = str.match(/FIRMWARE:([^\r\n]+)/);
-						if (fwMatch) {
-							deviceFirmwareVersion = fwMatch[1].trim();
-							mainWindow?.webContents.send('firmware:version', deviceFirmwareVersion);
+						serialLineBuffer += data.toString();
+						const lines = serialLineBuffer.split('\n');
+						// Last element is either '' (buffer ended exactly on a newline) or
+						// a not-yet-terminated partial line — either way, hold it back.
+						serialLineBuffer = lines.pop() ?? '';
+
+						for (const line of lines) {
+							const str = line + '\n';
+							const fwMatch = str.match(/FIRMWARE:([^\r\n]+)/);
+							if (fwMatch) {
+								deviceFirmwareVersion = fwMatch[1].trim();
+								mainWindow?.webContents.send('firmware:version', deviceFirmwareVersion);
+							}
+
+							const networksMatch = str.match(/WIFI_NETWORKS:([^\r\n]*)/);
+							if (networksMatch) {
+								const networks: WifiNetwork[] = networksMatch[1]
+									.split(';')
+									.filter(Boolean)
+									.map((entry) => {
+										const [ssid, rssi] = entry.split(',');
+										return { ssid, rssi: Number(rssi) };
+									});
+								resolvePendingWifi(networks);
+							}
+
+							const statusMatch = str.match(/WIFI_STATUS:([^\r\n]+)/);
+							if (statusMatch) {
+								const [state, ip] = statusMatch[1].split(',');
+								if (state === 'failed') rejectPendingWifi(new Error('Could not connect to that network'));
+								else resolvePendingWifi({ connected: state === 'connected', ip: ip ?? null });
+							}
+
+							const claudeRelayMatch = str.match(/CLAUDE_RELAY:([^\r\n]+)/);
+							if (claudeRelayMatch) handleClaudeRelay(claudeRelayMatch[1].trim());
+
+							const usageRelayMatch = str.match(/USAGE_RELAY:([^\r\n]+)/);
+							if (usageRelayMatch) {
+								const parts = usageRelayMatch[1].split(',').map(Number);
+								if (parts.length === 4) handleClaudeUsageRelay(parts[0], parts[1], parts[2], parts[3]);
+							}
+
+							mainWindow?.webContents.send('serial:data', str);
 						}
-
-						const networksMatch = str.match(/WIFI_NETWORKS:([^\r\n]*)/);
-						if (networksMatch) {
-							const networks: WifiNetwork[] = networksMatch[1]
-								.split(';')
-								.filter(Boolean)
-								.map((entry) => {
-									const [ssid, rssi] = entry.split(',');
-									return { ssid, rssi: Number(rssi) };
-								});
-							resolvePendingWifi(networks);
-						}
-
-						const statusMatch = str.match(/WIFI_STATUS:([^\r\n]+)/);
-						if (statusMatch) {
-							const [state, ip] = statusMatch[1].split(',');
-							if (state === 'failed') rejectPendingWifi(new Error('Could not connect to that network'));
-							else resolvePendingWifi({ connected: state === 'connected', ip: ip ?? null });
-						}
-
-						const claudeRelayMatch = str.match(/CLAUDE_RELAY:([^\r\n]+)/);
-						if (claudeRelayMatch) handleClaudeRelay(claudeRelayMatch[1].trim());
-
-						const usageRelayMatch = str.match(/USAGE_RELAY:([^\r\n]+)/);
-						if (usageRelayMatch) {
-							const parts = usageRelayMatch[1].split(',').map(Number);
-							if (parts.length === 4) handleClaudeUsageRelay(parts[0], parts[1], parts[2], parts[3]);
-						}
-
-						mainWindow?.webContents.send('serial:data', str);
 					});
 
 					thisPort.on('close', () => {

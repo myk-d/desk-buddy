@@ -32,25 +32,25 @@ unsigned long wifiConnectStartMs = 0;
 const unsigned long WIFI_CONNECT_TIMEOUT_MS = 15000;
 bool gazeServerStarted = false;
 
-String wifiScanNetworks()
+// Non-blocking scan — WiFi.scanNetworks() (blocking overload) took ~6-7s
+// measured on this hardware, freezing the entire loop() for that whole
+// window: animations, other serial commands, and this device's own WiFi
+// HTTP server all stalled. wifiScanStart() kicks off an async scan and
+// returns immediately; wifiPoll() (called every loop() iteration) checks
+// WiFi.scanComplete() and reports the result once ready.
+bool wifiScanPending = false;
+
+void wifiScanStart()
 {
+  if (wifiScanPending)
+    return; // already scanning — don't start a second overlapping scan
   // On a never-configured device, wifiTryAutoConnect() returns before ever
   // setting a WiFi mode (no saved credentials to connect with) — without
   // this, scanNetworks() silently finds nothing because the radio is still
   // off/null, not because there are no nearby networks.
   WiFi.mode(WIFI_STA);
-  int n = WiFi.scanNetworks();
-  String result = "";
-  for (int i = 0; i < n; i++)
-  {
-    if (i > 0)
-      result += ";";
-    result += WiFi.SSID(i);
-    result += ",";
-    result += String(WiFi.RSSI(i));
-  }
-  WiFi.scanDelete();
-  return result;
+  WiFi.scanNetworks(true); // async: returns immediately, WIFI_SCAN_RUNNING until done
+  wifiScanPending = true;
 }
 
 // Витягує рядкове значення "key":"value" з фіксованого JSON-тіла.
@@ -209,6 +209,11 @@ void wifiPoll()
         {
           MDNS.addService("http", "tcp", 80);
         }
+        // WebServer only exposes headers explicitly registered here — without
+        // this, server.header("X-Gaze-Token") always returns "" and every
+        // request gets rejected as forbidden, even with the correct token.
+        const char *headerKeys[] = {"X-Gaze-Token"};
+        gazeServer.collectHeaders(headerKeys, 1);
         gazeServer.on("/claude-state", HTTP_POST, handleClaudeStateHttp);
         gazeServer.on("/claude-usage", HTTP_POST, handleClaudeUsageHttp);
         gazeServer.begin();
@@ -227,5 +232,32 @@ void wifiPoll()
   if (gazeServerStarted && WiFi.status() == WL_CONNECTED)
   {
     gazeServer.handleClient();
+  }
+
+  if (wifiScanPending)
+  {
+    int n = WiFi.scanComplete();
+    if (n >= 0)
+    {
+      String result = "";
+      for (int i = 0; i < n; i++)
+      {
+        if (i > 0)
+          result += ";";
+        result += WiFi.SSID(i);
+        result += ",";
+        result += String(WiFi.RSSI(i));
+      }
+      WiFi.scanDelete();
+      wifiScanPending = false;
+      Serial.print("WIFI_NETWORKS:");
+      Serial.println(result);
+    }
+    else if (n == WIFI_SCAN_FAILED)
+    {
+      wifiScanPending = false;
+      Serial.println("WIFI_NETWORKS:"); // empty list — resolves the app's pending promise instead of a 20s timeout
+    }
+    // n == WIFI_SCAN_RUNNING (-1): still going, check again next loop()
   }
 }
