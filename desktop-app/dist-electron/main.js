@@ -1,8 +1,12 @@
 import "electron";
 import "child_process";
+import "crypto";
 import "path";
+import "http";
 import "https";
+import "fs";
+import "os";
 import "serialport";
 import "url";
 import "electron-updater";
-import "./main-CNgM1cPn.js";
+import "./main-CBz_CcT3.js";

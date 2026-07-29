@@ -14,4 +14,5 @@ export const ANIM_MODE_MAP: Record<string, string> = {
 	'#ANIM:error':     'ERROR',
 	'#ANIM:pomowork':  'POMO · FOCUS',
 	'#ANIM:pomobreak': 'POMO · BREAK',
+	'#ANIM:pomolongbreak': 'POMO · LONG BREAK',
 };

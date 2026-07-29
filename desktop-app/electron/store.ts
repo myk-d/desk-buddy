@@ -1,5 +1,4 @@
 import { app } from 'electron';
-import { randomUUID } from 'crypto';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
@@ -30,11 +29,19 @@ export function createJsonStore<T extends Entity>(filename: string) {
 		list(): T[] {
 			return readAll();
 		},
-		create(data: Omit<T, 'id' | 'createdAt' | 'updatedAt'>): T {
+		// Caller supplies `id` (the renderer generates it client-side, e.g. via
+		// crypto.randomUUID(), so the ported task-store hooks — which build a
+		// full new item and hand it to React state before persistence catches
+		// up — never have to reconcile a server-assigned id back into local
+		// state). Upserts by id, though in practice this is only ever called
+		// for ids that don't exist yet.
+		create(data: Omit<T, 'createdAt' | 'updatedAt'>): T {
 			const now = Date.now();
-			const item = { ...data, id: randomUUID(), createdAt: now, updatedAt: now } as T;
+			const item = { ...data, createdAt: now, updatedAt: now } as T;
 			const items = readAll();
-			items.push(item);
+			const index = items.findIndex((existing) => existing.id === item.id);
+			if (index === -1) items.push(item);
+			else items[index] = item;
 			writeAll(items);
 			return item;
 		},
@@ -49,6 +56,27 @@ export function createJsonStore<T extends Entity>(filename: string) {
 		},
 		remove(id: string): void {
 			writeAll(readAll().filter((item) => item.id !== id));
+		},
+	};
+}
+
+// For singleton values (settings/stats) that don't fit the entity-array shape
+// above — one JSON file holding one object, no id/createdAt/updatedAt.
+export function createJsonValueStore<T>(filename: string, defaultValue: T) {
+	const filePath = join(app.getPath('userData'), filename);
+
+	return {
+		get(): T {
+			if (!existsSync(filePath)) return defaultValue;
+			try {
+				return JSON.parse(readFileSync(filePath, 'utf8')) as T;
+			} catch (err) {
+				console.error(`[store] failed to parse ${filename}:`, (err as Error).message);
+				return defaultValue;
+			}
+		},
+		set(value: T): void {
+			writeFileSync(filePath, JSON.stringify(value, null, 2), 'utf8');
 		},
 	};
 }

@@ -3,7 +3,8 @@
  * ║            GAZE BUDDY — Custom Firmware v3.0              ║
  * ║      ESP32-S3 N16R8 + ILI9341 320×240 + NeoPixel          ║
  * ║                                                            ║
- * ║  Власна версія, без WiFi/сервоприводу/веб-сервера/U8g2.    ║
+ * ║  Власна версія, без сервоприводу/U8g2. WiFi опціональний,  ║
+ * ║  вимикається за замовчуванням (див. wifi_manager.h).      ║
  * ║  Контент тимчасово — анімації з Tabbie (idle/focus/relax/  ║
  * ║  love/startup/angry), формат файлів НЕ змінений.           ║
  * ╚══════════════════════════════════════════════════════════╝
@@ -17,6 +18,22 @@
  *   #ANIM:error\n     — помилка (статична картинка, не анімація)
  *   #R\n              — програмний рестарт
  *   #VERSION\n        — повернути версію прошивки
+ *   #CLAUDE:<sub>\n   — Claude Code стан: working/done/waiting/idle (повний екран)
+ *   #USAGE:<5hPct>,<5hSecs>,<7dPct>,<7dSecs>\n — % і секунди до скидання лімітів
+ *   #ANIM:pomowork\n     — Pomodoro: фокус (повний екран)
+ *   #ANIM:pomobreak\n    — Pomodoro: коротка перерва (повний екран)
+ *   #ANIM:pomolongbreak\n — Pomodoro: довга перерва (повний екран)
+ *   #TIME:<секунди>:<всього>\n — оновлює таймер у ST_POMO_WORK/BREAK/LONGBREAK
+ *   #WIFI:SCAN\n                        — сканує мережі, відповідь WIFI_NETWORKS:ssid,rssi;...
+ *   #WIFI:CONNECT:<token>:<ssid>,<pass>\n — зберігає й підключається, відповідь WIFI_STATUS:...
+ *   #WIFI:STATUS\n                      — поточний стан, відповідь WIFI_STATUS:...
+ *   #WIFI:FORGET\n                      — стирає збережені дані, від'єднує
+ *
+ * Після підключення до WiFi піднімається локальний веб-сервер (порт 80,
+ * mDNS "gaze-buddy.local") з POST /claude-state і /claude-usage — той самий
+ * формат тіла запиту, що вже POST'ить desktop-застосунок на localhost:7842,
+ * плюс заголовок X-Gaze-Token (той самий токен, що передавався в CONNECT).
+ * Дозволяє Claude Code оновлювати екран напряму, коли застосунок закритий.
  *
  * Чому саме такий формат команд (а не однобуквені #I/#W/...):
  *   нові стани додаються без перепрошивки протоколу — просто новий
@@ -25,7 +42,7 @@
 
 #include <Arduino.h>
 
-#define FIRMWARE_VERSION "0.1.0"
+#define FIRMWARE_VERSION "0.3.0"
 
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
@@ -38,6 +55,12 @@
 #include "happy.h"
 #include "angry.h"
 #include "love.h"
+
+// [НОВЕ] WiFi + локальний веб-сервер — щоб Claude Code міг оновлювати екран
+// напряму, навіть коли desktop-застосунок закритий. Included last among the
+// top headers so forward-declared applyClaudeState/applyClaudeUsage resolve
+// once they're defined later in this file (single translation unit).
+#include "wifi_manager.h"
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Піни (перевірені на платі)
@@ -101,6 +124,20 @@ const int OLED_DRAW_Y = (240 - OLED_DRAW_H) / 2;
 // Кольори відповідають React-застосунку: #38bdf8 (робота), #4ade80 (перерва)
 #define POMO_WORK_COLOR 0x3DFF
 #define POMO_BREAK_COLOR 0x4EF0
+#define POMO_LONGBREAK_COLOR 0x633D  // indigo — той самий #6366f1, що й React PHASE_META.longBreak
+
+// ── [НОВЕ] Claude Code full-screen status — окремий екран, без анімації ────
+// Дизайн орієнтований на брендовий колір Claude (термакота/orange #D97757).
+#define CLAUDE_WORKING_COLOR 0xD3AB  // Claude orange (#D97757)
+#define CLAUDE_DONE_COLOR 0x4EF0     // той самий зелений, що й pomo break
+#define CLAUDE_WAITING_COLOR 0xF800  // яскраво-червоний
+#define CLAUDE_NEUTRAL_COLOR 0x39C7  // сірий — заглушка, поки немає sub-стану
+#define CLAUDE_BG_DARK 0x0862        // майже чорний фон екрану
+#define CLAUDE_CARD_BG 0x18C4        // фон картки статистики
+#define CLAUDE_TRACK_COLOR 0x2965    // фон доріжки прогрес-бару
+#define CLAUDE_TEXT_MUTED 0x8430     // приглушений сірий текст
+#define CLAUDE_PCT_5H_COLOR 0xD3AB   // бар сесії (5h) — orange
+#define CLAUDE_PCT_7D_COLOR 0xF9F0   // бар тижня (7d) — pink
 
 // ── [НОВЕ] Буфер для кольорових (RGB565 delta+RLE) анімацій ────────────────
 // Має збігатись з FIRMWARE_CROP_W_MAX/H_MAX у convert_animation.mjs.
@@ -409,11 +446,20 @@ enum GazeState
   ST_LOVE,
   ST_ERROR,
   ST_POMO_WORK,
-  ST_POMO_BREAK
+  ST_POMO_BREAK,
+  ST_POMO_LONGBREAK,
+  ST_CLAUDE
 };
 GazeState currentState = ST_STARTUP;
 bool activeIsColorPlayer = false; // який плеєр тікати в loop() для поточного стану
 bool pomoLocked = false;          // true while pomodoro is running — blocks window-tracker #ANIM: commands
+
+// [НОВЕ] Claude Code full-screen status — 0=невідомо, 1=working, 2=done, 3=waiting
+int claudeSubState = 0;
+float claudeFiveHourPct = -1;  // -1 = ще немає даних
+float claudeSevenDayPct = -1;
+long claudeFiveHourSecsLeft = -1;  // секунд до скидання ліміту (рахує додаток, не прошивка)
+long claudeSevenDaySecsLeft = -1;
 
 // [НОВЕ] Pomodoro — повний екран, без анімації. Фон малюється один раз при
 // вході в стан (enterState), текст часу й прогрес-бар — окремо, при кожному
@@ -458,6 +504,117 @@ void drawPomodoroTime(int secondsLeft, int totalSeconds)
   lcd.fillRect(barX, barY, (int)(barW * frac), barH, 0xFFFF);
 }
 
+// [НОВЕ] Claude Code — тонка кольорова смужка стану зверху + дві картки
+// статистики (SESSION 5h / WEEKLY 7d), стилізовані під rounded stat cards.
+// Смужка малюється лише при зміні sub-стану (drawClaudeScreen), картки
+// оновлюються окремо (drawClaudeUsageBars), щоб #USAGE: не перемальовував
+// весь екран щоразу.
+
+void formatResetsIn(char *buf, size_t bufSize, long secs)
+{
+  if (secs <= 0)
+  {
+    buf[0] = '\0';
+    return;
+  }
+  long days = secs / 86400;
+  long hours = (secs % 86400) / 3600;
+  long mins = (secs % 3600) / 60;
+  if (days > 0)
+    snprintf(buf, bufSize, "resets in %ldd %ldh", days, hours);
+  else if (hours > 0)
+    snprintf(buf, bufSize, "resets in %ldh %ldm", hours, mins);
+  else
+    snprintf(buf, bufSize, "resets in %ldm", mins);
+}
+
+void drawClaudeCard(int x, int y, int w, int h, const char *label, float pct, uint16_t barColor, long secsLeft)
+{
+  lcd.fillRoundRect(x, y, w, h, 10, CLAUDE_CARD_BG);
+
+  lcd.setTextSize(1);
+  lcd.setTextColor(CLAUDE_TEXT_MUTED, CLAUDE_CARD_BG);
+  lcd.setCursor(x + 14, y + 12);
+  lcd.print(label);
+
+  char pctBuf[8];
+  if (pct >= 0)
+    snprintf(pctBuf, sizeof(pctBuf), "%d%%", (int)(pct + 0.5f));
+  else
+    snprintf(pctBuf, sizeof(pctBuf), "--");
+  lcd.setTextSize(3);
+  lcd.setTextColor(pct >= 0 ? 0xFFFF : CLAUDE_TEXT_MUTED, CLAUDE_CARD_BG);
+  lcd.setCursor(x + 14, y + 28);
+  lcd.print(pctBuf);
+
+  const int barX = x + 14, barW = w - 28, barH = 8, barY = y + h - 32;
+  lcd.fillRoundRect(barX, barY, barW, barH, barH / 2, CLAUDE_TRACK_COLOR);
+  if (pct >= 0)
+  {
+    float frac = pct / 100.0f;
+    if (frac > 1)
+      frac = 1;
+    if (frac < 0.04f)
+      frac = 0.04f; // лишаємо видиму крапку навіть при ~0%
+    int fillW = (int)(barW * frac);
+    lcd.fillRoundRect(barX, barY, fillW, barH, barH / 2, barColor);
+    lcd.fillCircle(barX + fillW, barY + barH / 2, 6, barColor);
+  }
+
+  char resetsBuf[32];
+  formatResetsIn(resetsBuf, sizeof(resetsBuf), secsLeft);
+  lcd.setTextSize(1);
+  lcd.setTextColor(CLAUDE_TEXT_MUTED, CLAUDE_CARD_BG);
+  lcd.setCursor(x + 14, y + h - 14);
+  lcd.print(resetsBuf);
+}
+
+void drawClaudeUsageBars()
+{
+  if (currentState != ST_CLAUDE)
+    return;
+  lcd.fillRect(0, 30, 320, 210, CLAUDE_BG_DARK);
+  drawClaudeCard(10, 38, 300, 96, "SESSION (5H)", claudeFiveHourPct, CLAUDE_PCT_5H_COLOR, claudeFiveHourSecsLeft);
+  drawClaudeCard(10, 140, 300, 96, "WEEKLY (7D)", claudeSevenDayPct, CLAUDE_PCT_7D_COLOR, claudeSevenDaySecsLeft);
+}
+
+void drawClaudeScreen()
+{
+  uint16_t stripColor;
+  const char *label;
+  switch (claudeSubState)
+  {
+  case 1:
+    stripColor = CLAUDE_WORKING_COLOR;
+    label = "WORKING";
+    break;
+  case 2:
+    stripColor = CLAUDE_DONE_COLOR;
+    label = "DONE";
+    break;
+  case 3:
+    stripColor = CLAUDE_WAITING_COLOR;
+    label = "NEEDS INPUT";
+    break;
+  default:
+    stripColor = CLAUDE_NEUTRAL_COLOR;
+    label = "CLAUDE CODE";
+    break;
+  }
+
+  lcd.fillScreen(CLAUDE_BG_DARK);
+  lcd.fillRect(0, 0, 320, 30, stripColor);
+  lcd.setTextSize(1);
+  lcd.setTextColor(0x0000, stripColor); // чорний текст — краще видно на маленькому екрані, ніж білий
+  lcd.setCursor(10, 11);
+  lcd.print("CLAUDE CODE");
+  int labelW = strlen(label) * 6;
+  lcd.setCursor(310 - labelW, 11);
+  lcd.print(label);
+
+  drawClaudeUsageBars();
+}
+
 void setNeo(uint8_t r, uint8_t g, uint8_t b)
 {
   pixels.setPixelColor(0, pixels.Color(r, g, b));
@@ -476,7 +633,7 @@ void enterState(GazeState s)
   lcd.fillScreen(0x0000);
 
   // Auto-lock during pomodoro states; unlock when leaving them
-  pomoLocked = (s == ST_POMO_WORK || s == ST_POMO_BREAK);
+  pomoLocked = (s == ST_POMO_WORK || s == ST_POMO_BREAK || s == ST_POMO_LONGBREAK);
 
   switch (s)
   {
@@ -535,7 +692,46 @@ void enterState(GazeState s)
     drawPomodoroBackground(POMO_BREAK_COLOR, "BREAK");
     setNeo(74, 222, 128); // той самий #4ade80
     break;
+  case ST_POMO_LONGBREAK:
+    drawPomodoroBackground(POMO_LONGBREAK_COLOR, "LONG BREAK");
+    setNeo(99, 102, 241); // той самий #6366f1
+    break;
+  case ST_CLAUDE:
+    drawClaudeScreen();
+    if (claudeSubState == 1)
+      setNeo(217, 119, 87); // Claude orange (#D97757)
+    else if (claudeSubState == 2)
+      setNeo(74, 222, 128);
+    else if (claudeSubState == 3)
+      setNeo(255, 0, 0);
+    else
+      setNeo(120, 120, 120);
+    break;
   }
+}
+
+// [НОВЕ] Спільний код для #CLAUDE:/#USAGE: (серійний порт) і /claude-state,
+// /claude-usage (WiFi HTTP, див. wifi_manager.h) — один шлях застосування
+// оновлення, незалежно від того, звідки воно прийшло.
+
+void applyClaudeState(int sub)
+{
+  if (pomoLocked)
+    return;
+  claudeSubState = sub;
+  if (sub == 0)
+    enterState(ST_IDLE);
+  else
+    enterState(ST_CLAUDE);
+}
+
+void applyClaudeUsage(float fiveHourPct, long fiveHourSecs, float sevenDayPct, long sevenDaySecs)
+{
+  claudeFiveHourPct = fiveHourPct;
+  claudeFiveHourSecsLeft = fiveHourSecs;
+  claudeSevenDayPct = sevenDayPct;
+  claudeSevenDaySecsLeft = sevenDaySecs;
+  drawClaudeUsageBars();
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -561,11 +757,11 @@ void handlePacket(const String &cmd)
   }
 
   // [НОВЕ] #TIME:<секунди_залишилось>:<всього_секунд> — оновлює великий час
-  // і прогрес-бар. Працює ТІЛЬКИ в режимах ST_POMO_WORK/ST_POMO_BREAK —
-  // звичайний #ANIM:focus (без pomo) цю команду просто ігнорує.
+  // і прогрес-бар. Працює ТІЛЬКИ в режимах ST_POMO_WORK/ST_POMO_BREAK/
+  // ST_POMO_LONGBREAK — звичайний #ANIM:focus (без pomo) цю команду просто ігнорує.
   if (cmd.startsWith("TIME:"))
   {
-    if (currentState == ST_POMO_WORK || currentState == ST_POMO_BREAK)
+    if (currentState == ST_POMO_WORK || currentState == ST_POMO_BREAK || currentState == ST_POMO_LONGBREAK)
     {
       String rest = cmd.substring(5);
       int sep = rest.indexOf(':');
@@ -576,12 +772,109 @@ void handlePacket(const String &cmd)
     return;
   }
 
+  if (cmd.startsWith("CLAUDE:"))
+  {
+    if (pomoLocked)
+    {
+      Serial.println("🔒 pomo locked — CLAUDE ignored");
+      return;
+    }
+    String sub = cmd.substring(7);
+    int subCode = -1;
+    if (sub == "idle")
+      subCode = 0;
+    else if (sub == "working")
+      subCode = 1;
+    else if (sub == "done")
+      subCode = 2;
+    else if (sub == "waiting")
+      subCode = 3;
+    if (subCode >= 0)
+    {
+      applyClaudeState(subCode);
+      Serial.print("✅ CLAUDE → ");
+      Serial.println(sub);
+    }
+    return;
+  }
+
+  if (cmd.startsWith("USAGE:"))
+  {
+    // #USAGE:<5hPct>,<5hSecsLeft>,<7dPct>,<7dSecsLeft>\n — секунди до
+    // скидання рахує додаток (у нього є реальний час), прошивка лише показує.
+    String rest = cmd.substring(6);
+    int c1 = rest.indexOf(',');
+    int c2 = (c1 >= 0) ? rest.indexOf(',', c1 + 1) : -1;
+    int c3 = (c2 >= 0) ? rest.indexOf(',', c2 + 1) : -1;
+    if (c1 >= 0 && c2 >= 0 && c3 >= 0)
+    {
+      applyClaudeUsage(
+          rest.substring(0, c1).toFloat(),
+          rest.substring(c1 + 1, c2).toInt(),
+          rest.substring(c2 + 1, c3).toFloat(),
+          rest.substring(c3 + 1).toInt());
+    }
+    return;
+  }
+
+  if (cmd == "WIFI:SCAN")
+  {
+    Serial.print("WIFI_NETWORKS:");
+    Serial.println(wifiScanNetworks());
+    return;
+  }
+
+  if (cmd.startsWith("WIFI:CONNECT:"))
+  {
+    // #WIFI:CONNECT:<token>:<ssid>,<password>\n — token first (fixed 32-hex
+    // chars, no ambiguous delimiters) so a comma inside the password can't
+    // be confused with a field separator; only a comma inside the SSID
+    // itself (rare in practice) would still misparse.
+    String rest = cmd.substring(13);
+    int tokenEnd = rest.indexOf(':');
+    if (tokenEnd >= 0)
+    {
+      String token = rest.substring(0, tokenEnd);
+      String ssidAndPass = rest.substring(tokenEnd + 1);
+      int commaIdx = ssidAndPass.indexOf(',');
+      if (commaIdx >= 0)
+      {
+        String ssid = ssidAndPass.substring(0, commaIdx);
+        String password = ssidAndPass.substring(commaIdx + 1);
+        wifiBeginConnect(ssid, password, token);
+        Serial.println("✅ WIFI:CONNECT started");
+      }
+    }
+    return;
+  }
+
+  if (cmd == "WIFI:STATUS")
+  {
+    if (WiFi.status() == WL_CONNECTED)
+    {
+      Serial.print("WIFI_STATUS:connected,");
+      Serial.println(WiFi.localIP().toString());
+    }
+    else
+    {
+      Serial.println("WIFI_STATUS:disconnected");
+    }
+    return;
+  }
+
+  if (cmd == "WIFI:FORGET")
+  {
+    wifiForget();
+    Serial.println("✅ WIFI:FORGET done");
+    return;
+  }
+
   if (cmd.startsWith("ANIM:"))
   {
     String name = cmd.substring(5);
 
     // Pomo and idle always go through; other window-tracker anims are blocked while pomoLocked.
-    bool isPomoAnim = (name == "pomowork" || name == "pomobreak" || name == "idle");
+    bool isPomoAnim = (name == "pomowork" || name == "pomobreak" || name == "pomolongbreak" || name == "idle");
     if (pomoLocked && !isPomoAnim)
     {
       Serial.println("🔒 pomo locked — ANIM ignored");
@@ -628,6 +921,11 @@ void handlePacket(const String &cmd)
       enterState(ST_POMO_BREAK);
       Serial.println("✅ ANIM → pomobreak (повний екран)");
     }
+    else if (name == "pomolongbreak")
+    {
+      enterState(ST_POMO_LONGBREAK);
+      Serial.println("✅ ANIM → pomolongbreak (повний екран)");
+    }
     else
     {
       Serial.print("⚠️ Невідома анімація: ");
@@ -661,7 +959,9 @@ void readSerial()
       packetBuf = "";
       continue;
     }
-    if (packetBuf.length() < 32)
+    // Was 32 — bumped to fit #WIFI:CONNECT:<token>:<ssid>,<password> (SSID up
+    // to 32 bytes + WPA2 password up to 64 + a 32-char hex token + prefixes).
+    if (packetBuf.length() < 256)
       packetBuf += c;
   }
 }
@@ -693,14 +993,17 @@ void setup()
   enterState(ST_STARTUP);
   Serial.println("READY");
   Serial.println("FIRMWARE:" FIRMWARE_VERSION);
+
+  wifiTryAutoConnect();
 }
 
 void loop()
 {
   readSerial();
+  wifiPoll(); // завжди, незалежно від currentState — інакше HTTP-запити не обробляються під час Pomodoro/Claude екранів
 
-  // [НОВЕ] Pomodoro full-screen — без анімації, нічого тікати не потрібно
-  if (currentState == ST_POMO_WORK || currentState == ST_POMO_BREAK)
+  // [НОВЕ] Pomodoro / Claude Code full-screen — без анімації, нічого тікати не потрібно
+  if (currentState == ST_POMO_WORK || currentState == ST_POMO_BREAK || currentState == ST_POMO_LONGBREAK || currentState == ST_CLAUDE)
     return;
 
   bool loopAnim = (currentState != ST_STARTUP); // стартова анімація грає лише раз

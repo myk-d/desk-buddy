@@ -4,6 +4,10 @@ export function useSerial() {
 	const [status, setStatus] = useState<'connected' | 'disconnected'>('disconnected');
 	const [connectedPath, setConnectedPath] = useState('');
 	const [deviceLog, setDeviceLog] = useState<string[]>([]);
+	// Points at the log's own scrollable box (not a bottom sentinel) so we can
+	// set scrollTop directly — scrollIntoView() cascades to scroll ancestor
+	// containers too, which at the default window size pushed the whole
+	// Dashboard page down far enough to hide its header above the fold.
 	const logEndRef = useRef<HTMLDivElement>(null);
 
 	function appendLog(lines: string[]) {
@@ -29,7 +33,12 @@ export function useSerial() {
 	}, []);
 
 	useEffect(() => {
-		logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+		const el = logEndRef.current;
+		if (!el) return;
+		// Only snap to bottom if the user was already there — otherwise every
+		// new line would yank them back down while reading scrolled-up history.
+		const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+		if (distanceFromBottom < 40) el.scrollTop = el.scrollHeight;
 	}, [deviceLog]);
 
 	function sendPacket(packet: string) {

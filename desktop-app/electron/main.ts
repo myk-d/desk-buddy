@@ -1,20 +1,48 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from 'electron';
 import { exec, execSync } from 'child_process';
+import { randomUUID, randomBytes } from 'crypto';
 import { dirname, join } from 'path';
+import http from 'http';
 import https from 'https';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs';
+import { homedir } from 'os';
 import { SerialPort } from 'serialport';
 import { fileURLToPath } from 'url';
 import electronUpdaterPkg from 'electron-updater';
 const { autoUpdater } = electronUpdaterPkg;
 import { triggerBootloaderReset, findEspPort, flashFirmware } from './flasher';
-import { createJsonStore } from './store';
-import type { Todo, PomodoroPreset } from '../src/types';
+import { createJsonStore, createJsonValueStore } from './store';
+import type { TaskList, Section, Task, Tag, CalendarEvent, PomodoroPreset, PomodoroSettings, PomodoroStats, WifiConfig, WifiNetwork, WifiConnectResult, WifiStatus } from '../src/types';
+
+const DEFAULT_POMODORO_SETTINGS: PomodoroSettings = {
+	focusMinutes: 25,
+	shortBreakMinutes: 5,
+	longBreakMinutes: 15,
+	sessionsBeforeLongBreak: 4,
+	autoStartNext: true,
+};
+
+const DEFAULT_POMODORO_STATS: PomodoroStats = {
+	todayDate: '',
+	todaySessions: 0,
+	todayFocusMinutes: 0,
+	totalSessions: 0,
+	totalFocusMinutes: 0,
+};
+
+const DEFAULT_WIFI_CONFIG: WifiConfig = { configured: false, ssid: null, token: null };
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 let activePort: SerialPort | null = null;
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+// Closing the window normally just hides it (see createWindow's 'close'
+// handler) so the Claude Code hook relay / serial connection / device
+// tracker all keep running in the background — only the tray's "Quit" sets
+// this and calls app.quit() for a real exit.
+let isQuitting = false;
 let autoConnectTimer: NodeJS.Timeout | null = null;
 let windowTrackerTimer: NodeJS.Timeout | null = null;
 let isConnecting = false;
@@ -23,6 +51,164 @@ let lastCategory: Category | null = null;
 let isPomodoroActive = false;
 let isFlashing = false;
 let deviceFirmwareVersion: string | null = null;
+
+type ClaudeCodeState = 'idle' | 'working' | 'done' | 'waiting';
+let claudeCodeState: ClaudeCodeState = 'idle';
+let claudeResetTimer: NodeJS.Timeout | null = null;
+
+// $CLAUDE_CODE_ENTRYPOINT from the hook that last fired — e.g. "cli" (a real
+// terminal) or "claude-vscode" (the VS Code extension). Only the terminal
+// front-end ever renders a statusLine, so this explains to the user why the
+// usage bars might stay empty even while this state updates fine.
+let claudeCodeSource: string | null = null;
+
+interface ClaudeUsage {
+	hasData: boolean;
+	fiveHourPct: number | null;
+	fiveHourResetsAt: number | null;
+	sevenDayPct: number | null;
+	sevenDayResetsAt: number | null;
+}
+let claudeUsage: ClaudeUsage = {
+	hasData: false, fiveHourPct: null, fiveHourResetsAt: null, sevenDayPct: null, sevenDayResetsAt: null,
+};
+
+// Assigned once app.whenReady() runs (createJsonValueStore needs app.getPath,
+// unavailable before then) — see currentHookTarget()'s `wifiStore?.get()`.
+let wifiStore: ReturnType<typeof createJsonValueStore<WifiConfig>> | null = null;
+
+interface PendingWifiRequest {
+	resolve: (value: unknown) => void;
+	reject: (err: Error) => void;
+	timeout: NodeJS.Timeout;
+}
+let pendingWifiRequest: PendingWifiRequest | null = null;
+
+// ── Claude Code hook scripts (written to ~/.claude/hooks/ on setup) ───────────
+// Target is either the app's own localhost:7842 relay (default — requires the
+// app running) or the device's own WiFi-hosted server (once configured —
+// works even with the app closed). Regenerated whenever WiFi connects/forgets.
+
+const CLAUDE_HOOKS_DIR = join(homedir(), '.claude', 'hooks');
+const CLAUDE_SETTINGS_PATH = join(homedir(), '.claude', 'settings.json');
+
+interface HookTarget {
+	host: string;
+	port: number;
+	token: string | null;
+}
+
+function localHookTarget(): HookTarget {
+	return { host: '127.0.0.1', port: 7842, token: null };
+}
+
+function currentHookTarget(): HookTarget {
+	const wifi = wifiStore?.get() ?? DEFAULT_WIFI_CONFIG;
+	if (wifi.configured && wifi.token) return { host: 'gaze-buddy.local', port: 80, token: wifi.token };
+	return localHookTarget();
+}
+
+function curlHeaderArgs(target: HookTarget): string {
+	let s = `-H 'Content-Type: application/json'`;
+	if (target.token) s += ` \\\n  -H 'X-Gaze-Token: ${target.token}'`;
+	return s;
+}
+
+// $CLAUDE_CODE_ENTRYPOINT (e.g. "cli" / "claude-vscode") tells the app whether
+// this fired from a terminal session or the VS Code extension — used to
+// explain why usage bars (statusLine-only) might be empty despite this state
+// hook firing fine from either front-end.
+function buildStateHook(target: HookTarget, state: string): string {
+	return `#!/bin/bash
+cat > /dev/null
+curl -sf -X POST http://${target.host}:${target.port}/claude-state \\
+  ${curlHeaderArgs(target)} \\
+  -d "{\\"state\\":\\"${state}\\",\\"source\\":\\"\${CLAUDE_CODE_ENTRYPOINT:-unknown}\\"}" >/dev/null 2>&1 || true
+`;
+}
+
+// Fed the real rate_limits (five_hour/seven_day used_percentage + resetsAt) by
+// Claude Code on every statusLine render; POSTs them to the target server and
+// still prints a normal status line so the terminal UI keeps working.
+function buildStatuslineHook(target: HookTarget): string {
+	const tokenHeader = target.token ? `'X-Gaze-Token': '${target.token}', ` : '';
+	return `#!/usr/bin/env node
+'use strict';
+const http = require('http');
+
+let raw = '';
+process.stdin.on('data', chunk => { raw += chunk; });
+process.stdin.on('end', () => {
+    let data = {};
+    try { data = JSON.parse(raw); } catch {}
+
+    const model = data.model?.display_name ?? 'Claude';
+    const rl = data.rate_limits;
+    const fiveHour = rl?.five_hour;
+    const sevenDay = rl?.seven_day;
+
+    let line = model;
+    if (fiveHour) line += \` | 5h: \${Math.round(fiveHour.used_percentage)}%\`;
+    if (sevenDay) line += \` | 7d: \${Math.round(sevenDay.used_percentage)}%\`;
+    process.stdout.write(line);
+
+    if (rl) {
+        const payload = JSON.stringify({
+            hasData: true,
+            fiveHourPct: fiveHour?.used_percentage ?? null,
+            fiveHourResetsAt: fiveHour?.resets_at ?? null,
+            sevenDayPct: sevenDay?.used_percentage ?? null,
+            sevenDayResetsAt: sevenDay?.resets_at ?? null,
+        });
+        const req = http.request({
+            hostname: '${target.host}', port: ${target.port}, path: '/claude-usage', method: 'POST',
+            headers: { ${tokenHeader}'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+        }, () => { process.exit(0); });
+        req.on('error', () => process.exit(0));
+        req.setTimeout(300, () => { req.destroy(); process.exit(0); });
+        req.write(payload);
+        req.end();
+    } else {
+        process.exit(0);
+    }
+});
+`;
+}
+
+function isClaudeHooksSetup(): boolean {
+	try {
+		const settings = JSON.parse(readFileSync(CLAUDE_SETTINGS_PATH, 'utf8'));
+		const hooks = settings?.hooks ?? {};
+		const hasHooks = !!(hooks.PreToolUse?.length && hooks.Stop?.length && hooks.Notification?.length);
+		const hasStatusLine = settings?.statusLine?.type === 'command';
+		return hasHooks && hasStatusLine;
+	} catch {
+		return false;
+	}
+}
+
+function setupClaudeHooks(): void {
+	mkdirSync(CLAUDE_HOOKS_DIR, { recursive: true });
+	const target = currentHookTarget();
+	writeFileSync(join(CLAUDE_HOOKS_DIR, 'pre-tool.sh'), buildStateHook(target, 'working'), { mode: 0o755 });
+	writeFileSync(join(CLAUDE_HOOKS_DIR, 'notification.sh'), buildStateHook(target, 'waiting'), { mode: 0o755 });
+	writeFileSync(join(CLAUDE_HOOKS_DIR, 'stop.sh'), buildStateHook(target, 'done'), { mode: 0o755 });
+	writeFileSync(join(CLAUDE_HOOKS_DIR, 'statusline.js'), buildStatuslineHook(target), { mode: 0o755 });
+
+	let settings: Record<string, unknown> = {};
+	try { settings = JSON.parse(readFileSync(CLAUDE_SETTINGS_PATH, 'utf8')); } catch {}
+
+	settings.hooks = {
+		...(settings.hooks as Record<string, unknown> ?? {}),
+		// PreToolUse is matched per-tool, so it needs an explicit wildcard.
+		// Stop/Notification aren't tool-specific — they take no `matcher` field at all.
+		PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: `bash ${join(CLAUDE_HOOKS_DIR, 'pre-tool.sh')}` }] }],
+		Stop:        [{ hooks: [{ type: 'command', command: `bash ${join(CLAUDE_HOOKS_DIR, 'stop.sh')}` }] }],
+		Notification:[{ hooks: [{ type: 'command', command: `bash ${join(CLAUDE_HOOKS_DIR, 'notification.sh')}` }] }],
+	};
+	settings.statusLine = { type: 'command', command: `node ${join(CLAUDE_HOOKS_DIR, 'statusline.js')}` };
+	writeFileSync(CLAUDE_SETTINGS_PATH, JSON.stringify(settings, null, 2));
+}
 
 const TARGET_VID = '303a';
 
@@ -116,7 +302,10 @@ async function getActiveWindowApp(): Promise<string | null> {
 		if (process.platform === 'linux') {
 			const winIdOut = execSync('xprop -root _NET_ACTIVE_WINDOW', { encoding: 'utf8', timeout: 800 });
 			const winIdMatch = winIdOut.match(/0x[0-9a-f]+/i);
-			if (!winIdMatch) return null;
+			// "0x0" is xprop's own way of saying "no window currently has focus"
+			// (e.g. focus briefly on the desktop/a detached DevTools window) — it
+			// matches the hex regex but xprop -id rejects it as an invalid id.
+			if (!winIdMatch || winIdMatch[0] === '0x0') return null;
 			const classOut = execSync(`xprop -id ${winIdMatch[0]} WM_CLASS`, { encoding: 'utf8', timeout: 800 });
 			// WM_CLASS(STRING) = "code", "Code" — instance name is the first quoted token
 			const classMatch = classOut.match(/"([^"]+)"/);
@@ -149,10 +338,72 @@ async function getActiveWindowApp(): Promise<string | null> {
 	}
 }
 
+// Thin relay: the app just forwards the raw signal over serial — the firmware
+// itself decides what to draw (dedicated ST_CLAUDE screen, see main.cpp).
+function handleClaudeCodeState(state: ClaudeCodeState) {
+	if (claudeResetTimer) { clearTimeout(claudeResetTimer); claudeResetTimer = null; }
+
+	claudeCodeState = state;
+	mainWindow?.webContents.send('claude:state', state);
+
+	if (!isDeviceConnected || !activePort?.isOpen) return;
+	activePort.write(`#CLAUDE:${state}\n`);
+
+	if (state === 'done') {
+		claudeResetTimer = setTimeout(() => {
+			claudeCodeState = 'idle';
+			lastCategory = null;
+			mainWindow?.webContents.send('claude:state', 'idle');
+			if (isDeviceConnected && activePort?.isOpen) activePort.write('#CLAUDE:idle\n');
+		}, 3000);
+	}
+}
+
+function handleClaudeUsage(usage: Partial<ClaudeUsage>) {
+	claudeUsage = { ...claudeUsage, ...usage, hasData: true };
+	mainWindow?.webContents.send('claude:usage', { ...claudeUsage });
+
+	if (!isDeviceConnected || !activePort?.isOpen) return;
+	if (claudeUsage.fiveHourPct === null || claudeUsage.sevenDayPct === null) return;
+
+	// Firmware has no RTC, so it can't turn an epoch timestamp into a countdown —
+	// the app computes seconds-remaining here (it has real wall-clock time) and
+	// the device just displays it.
+	const secsUntil = (resetsAt: number | null) =>
+		resetsAt ? Math.max(0, Math.round(resetsAt - Date.now() / 1000)) : 0;
+
+	activePort.write(
+		`#USAGE:${Math.round(claudeUsage.fiveHourPct)},${secsUntil(claudeUsage.fiveHourResetsAt)},` +
+		`${Math.round(claudeUsage.sevenDayPct)},${secsUntil(claudeUsage.sevenDayResetsAt)}\n`,
+	);
+}
+
+// Fired when the device received a Claude Code update over WiFi directly
+// (bypassing this app) and relayed it back over USB purely so this app's own
+// UI stays in sync — must NOT write back to the device (it already knows;
+// echoing would be circular).
+function handleClaudeRelay(state: string) {
+	if (state !== 'idle' && state !== 'working' && state !== 'done' && state !== 'waiting') return;
+	claudeCodeState = state;
+	mainWindow?.webContents.send('claude:state', state);
+}
+
+function handleClaudeUsageRelay(fiveHourPct: number, fiveHourSecsLeft: number, sevenDayPct: number, sevenDaySecsLeft: number) {
+	const now = Math.round(Date.now() / 1000);
+	claudeUsage = {
+		hasData: true,
+		fiveHourPct,
+		fiveHourResetsAt: now + fiveHourSecsLeft,
+		sevenDayPct,
+		sevenDayResetsAt: now + sevenDaySecsLeft,
+	};
+	mainWindow?.webContents.send('claude:usage', { ...claudeUsage });
+}
+
 function startWindowTracker() {
 	let isChecking = false;
 	windowTrackerTimer = setInterval(async () => {
-		if (!isDeviceConnected || !activePort?.isOpen || isChecking || isPomodoroActive) return;
+		if (!isDeviceConnected || !activePort?.isOpen || isChecking || isPomodoroActive || claudeCodeState !== 'idle') return;
 		isChecking = true;
 		try {
 			const appName = await getActiveWindowApp();
@@ -197,8 +448,20 @@ function createWindow(): void {
 		}
 	});
 
+	// Clicking the window's close button hides it instead of quitting the app —
+	// the serial connection, device tracker, and the Claude Code hook HTTP
+	// server all need to keep running so hooks fired while the window is
+	// "closed" still reach the device instead of silently failing.
+	mainWindow.on('close', (e) => {
+		if (!isQuitting) {
+			e.preventDefault();
+			mainWindow?.hide();
+		}
+	});
+
 	if (process.env['VITE_DEV_SERVER_URL']) {
 		mainWindow.loadURL(process.env['VITE_DEV_SERVER_URL']);
+		mainWindow.webContents.openDevTools({ mode: 'detach' });
 	} else {
 		mainWindow.loadFile(join(__dirname, '../dist/index.html'));
 	}
@@ -252,8 +515,40 @@ function startAutoConnectScanner() {
 
 					thisPort.on('data', (data: Buffer) => {
 						const str = data.toString();
-						const match = str.match(/FIRMWARE:([^\r\n]+)/);
-						if (match) deviceFirmwareVersion = match[1].trim();
+						const fwMatch = str.match(/FIRMWARE:([^\r\n]+)/);
+						if (fwMatch) {
+							deviceFirmwareVersion = fwMatch[1].trim();
+							mainWindow?.webContents.send('firmware:version', deviceFirmwareVersion);
+						}
+
+						const networksMatch = str.match(/WIFI_NETWORKS:([^\r\n]*)/);
+						if (networksMatch) {
+							const networks: WifiNetwork[] = networksMatch[1]
+								.split(';')
+								.filter(Boolean)
+								.map((entry) => {
+									const [ssid, rssi] = entry.split(',');
+									return { ssid, rssi: Number(rssi) };
+								});
+							resolvePendingWifi(networks);
+						}
+
+						const statusMatch = str.match(/WIFI_STATUS:([^\r\n]+)/);
+						if (statusMatch) {
+							const [state, ip] = statusMatch[1].split(',');
+							if (state === 'failed') rejectPendingWifi(new Error('Could not connect to that network'));
+							else resolvePendingWifi({ connected: state === 'connected', ip: ip ?? null });
+						}
+
+						const claudeRelayMatch = str.match(/CLAUDE_RELAY:([^\r\n]+)/);
+						if (claudeRelayMatch) handleClaudeRelay(claudeRelayMatch[1].trim());
+
+						const usageRelayMatch = str.match(/USAGE_RELAY:([^\r\n]+)/);
+						if (usageRelayMatch) {
+							const parts = usageRelayMatch[1].split(',').map(Number);
+							if (parts.length === 4) handleClaudeUsageRelay(parts[0], parts[1], parts[2], parts[3]);
+						}
+
 						mainWindow?.webContents.send('serial:data', str);
 					});
 
@@ -277,33 +572,307 @@ function startAutoConnectScanner() {
 	}, 2000);
 }
 
+// ── Claude Code hook HTTP server ──────────────────────────────────────────────
+
+http.createServer((req, res) => {
+	if (req.method === 'POST' && req.url === '/claude-state') {
+		let body = '';
+		req.on('data', chunk => { body += chunk; });
+		req.on('end', () => {
+			try {
+				const d = JSON.parse(body);
+				handleClaudeCodeState(d.state);
+				if (typeof d.source === 'string' && d.source !== claudeCodeSource) {
+					claudeCodeSource = d.source;
+					mainWindow?.webContents.send('claude:source', claudeCodeSource);
+				}
+			} catch {}
+			res.writeHead(200);
+			res.end('ok');
+		});
+	} else if (req.method === 'POST' && req.url === '/claude-usage') {
+		let body = '';
+		req.on('data', chunk => { body += chunk; });
+		req.on('end', () => {
+			try {
+				const d = JSON.parse(body);
+				handleClaudeUsage({
+					fiveHourPct: d.fiveHourPct ?? null,
+					fiveHourResetsAt: d.fiveHourResetsAt ?? null,
+					sevenDayPct: d.sevenDayPct ?? null,
+					sevenDayResetsAt: d.sevenDayResetsAt ?? null,
+				});
+			} catch {}
+			res.writeHead(200);
+			res.end('ok');
+		});
+	} else {
+		res.writeHead(404);
+		res.end();
+	}
+}).listen(7842, '127.0.0.1');
+
+// ── Fallback usage source: Claude Code's own account-usage endpoint ──────────
+// statusLine (the primary source above) never fires from the VS Code
+// extension, only from a real terminal session. This polls the same
+// undocumented endpoint Claude Code's own CLI uses, keyed off the OAuth token
+// it already stores locally, so usage bars populate regardless of which
+// front-end is active. Undocumented and known to self-rate-limit aggressively
+// (429s even at ~5min polling), so we poll conservatively and back off hard.
+const CLAUDE_CREDENTIALS_PATH = join(homedir(), '.claude', '.credentials.json');
+let usageApiBackoffUntil = 0;
+
+function readClaudeAccessToken(): string | null {
+	try {
+		const creds = JSON.parse(readFileSync(CLAUDE_CREDENTIALS_PATH, 'utf8'));
+		return creds?.claudeAiOauth?.accessToken ?? null;
+	} catch {
+		return null;
+	}
+}
+
+function pollClaudeUsageFromApi(): void {
+	if (!isClaudeHooksSetup() || Date.now() < usageApiBackoffUntil) return;
+	const token = readClaudeAccessToken();
+	if (!token) return;
+
+	const req = https.get(
+		'https://api.anthropic.com/api/oauth/usage',
+		{ headers: { Authorization: `Bearer ${token}` } },
+		(res) => {
+			if (res.statusCode === 429) {
+				usageApiBackoffUntil = Date.now() + 30 * 60_000;
+				res.resume();
+				return;
+			}
+			if (res.statusCode !== 200) { res.resume(); return; }
+			let body = '';
+			res.on('data', (c: string) => { body += c; });
+			res.on('end', () => {
+				try {
+					const d = JSON.parse(body);
+					const toEpoch = (iso: string | undefined) => iso ? Math.round(new Date(iso).getTime() / 1000) : null;
+					handleClaudeUsage({
+						fiveHourPct: d.five_hour?.utilization ?? null,
+						fiveHourResetsAt: toEpoch(d.five_hour?.resets_at),
+						sevenDayPct: d.seven_day?.utilization ?? null,
+						sevenDayResetsAt: toEpoch(d.seven_day?.resets_at),
+					});
+				} catch {}
+			});
+		},
+	);
+	req.on('error', () => {});
+	req.setTimeout(10000, () => req.destroy());
+}
+
+setTimeout(pollClaudeUsageFromApi, 5000);
+setInterval(pollClaudeUsageFromApi, 6 * 60_000);
+
+// Wires list/create/update/remove IPC handlers for one entity-collection
+// store, following the exact channel-naming convention already used by the
+// (now-removed) todos:*/pomodoros:* handlers — `${namespace}:list` etc.
+function registerCrudIpc<T extends { id: string; createdAt: number; updatedAt: number }>(
+	namespace: string,
+	store: ReturnType<typeof createJsonStore<T>>,
+) {
+	ipcMain.handle(`${namespace}:list`, () => store.list());
+	ipcMain.handle(`${namespace}:create`, (_, data: Omit<T, 'createdAt' | 'updatedAt'>) => store.create(data));
+	ipcMain.handle(`${namespace}:update`, (_, id: string, patch: Partial<Omit<T, 'id' | 'createdAt'>>) => store.update(id, patch));
+	ipcMain.handle(`${namespace}:remove`, (_, id: string) => store.remove(id));
+}
+
+function registerValueIpc<T>(namespace: string, store: ReturnType<typeof createJsonValueStore<T>>) {
+	ipcMain.handle(`${namespace}:get`, () => store.get());
+	ipcMain.handle(`${namespace}:set`, (_, value: T) => store.set(value));
+}
+
+// The source app seeded a default list/section/presets on first Firebase
+// login (see its lib/userInitializer.ts) — there's no such event here, so
+// this runs once on first launch instead, gated by a flag file so it never
+// re-seeds after the user deletes everything on purpose.
+function ensureSeeded(
+	listsStore: ReturnType<typeof createJsonStore<TaskList>>,
+	sectionsStore: ReturnType<typeof createJsonStore<Section>>,
+	presetsStore: ReturnType<typeof createJsonStore<PomodoroPreset>>,
+) {
+	const seededFlag = createJsonValueStore<boolean>('seeded.json', false);
+	if (seededFlag.get()) return;
+	if (listsStore.list().length > 0 || presetsStore.list().length > 0) {
+		seededFlag.set(true);
+		return;
+	}
+
+	const listId = randomUUID();
+	const sectionId = randomUUID();
+
+	listsStore.create({ id: listId, name: 'My Tasks', isDefault: true, groupBy: 'sequence', sortBy: 'sequence' });
+	sectionsStore.create({ id: sectionId, listId, name: 'Tasks', order: 0 });
+	presetsStore.create({ id: randomUUID(), name: 'Classic', focusMinutes: 25, shortBreakMinutes: 5, longBreakMinutes: 15, sessionsBeforeLongBreak: 4, autoStartNext: true });
+	presetsStore.create({ id: randomUUID(), name: 'Deep Work', focusMinutes: 50, shortBreakMinutes: 10, longBreakMinutes: 20, sessionsBeforeLongBreak: 3, autoStartNext: true });
+
+	seededFlag.set(true);
+}
+
+// ── WiFi provisioning ──────────────────────────────────────────────────────────
+// Credentials are entered once in this app and sent to the device over the
+// existing USB serial link — never typed on the device itself. Once
+// connected, the device hosts its own tiny HTTP server (see
+// firmware/src/wifi_manager.h) so Claude Code hooks can reach it directly,
+// without this app needing to be running.
+
+function resolvePendingWifi(value: unknown) {
+	if (!pendingWifiRequest) return;
+	clearTimeout(pendingWifiRequest.timeout);
+	pendingWifiRequest.resolve(value);
+	pendingWifiRequest = null;
+}
+
+function rejectPendingWifi(err: Error) {
+	if (!pendingWifiRequest) return;
+	clearTimeout(pendingWifiRequest.timeout);
+	pendingWifiRequest.reject(err);
+	pendingWifiRequest = null;
+}
+
+function registerWifiIpc() {
+	ipcMain.handle('wifi:scan', () => {
+		return new Promise<WifiNetwork[]>((resolve, reject) => {
+			if (!activePort?.isOpen) { reject(new Error('Device not connected')); return; }
+			if (pendingWifiRequest) { reject(new Error('Another WiFi request is already in progress')); return; }
+			// WiFi.scanNetworks() on the ESP32 is blocking and commonly takes
+			// well over 8s with several nearby networks — give it real headroom.
+			const timeout = setTimeout(() => { pendingWifiRequest = null; reject(new Error('Scan timed out')); }, 20000);
+			pendingWifiRequest = { resolve: resolve as (v: unknown) => void, reject, timeout };
+			activePort.write('#WIFI:SCAN\n');
+		});
+	});
+
+	ipcMain.handle('wifi:connect', (_, ssid: string, password: string) => {
+		return new Promise<WifiConnectResult>((resolve, reject) => {
+			if (!activePort?.isOpen) { reject(new Error('Device not connected')); return; }
+			if (pendingWifiRequest) { reject(new Error('Another WiFi request is already in progress')); return; }
+			const token = randomBytes(16).toString('hex');
+			const timeout = setTimeout(() => { pendingWifiRequest = null; reject(new Error('Connect timed out')); }, 20000);
+			pendingWifiRequest = {
+				resolve: (value) => {
+					const result = value as WifiConnectResult;
+					if (result.connected) {
+						wifiStore?.set({ configured: true, ssid, token });
+						if (isClaudeHooksSetup()) setupClaudeHooks();
+					}
+					resolve(result);
+				},
+				reject,
+				timeout,
+			};
+			activePort.write(`#WIFI:CONNECT:${token}:${ssid},${password}\n`);
+		});
+	});
+
+	ipcMain.handle('wifi:status', (): WifiStatus => {
+		const cfg = wifiStore?.get() ?? DEFAULT_WIFI_CONFIG;
+		return { configured: cfg.configured, ssid: cfg.ssid };
+	});
+
+	ipcMain.handle('wifi:forget', () => {
+		wifiStore?.set({ configured: false, ssid: null, token: null });
+		if (activePort?.isOpen) activePort.write('#WIFI:FORGET\n');
+		if (isClaudeHooksSetup()) setupClaudeHooks();
+	});
+}
+
+// Electron's app.setLoginItemSettings/getLoginItemSettings is macOS/Windows
+// only — a silent no-op on Linux (no .desktop file, always reports false).
+// Linux desktop environments (GNOME/KDE/XFCE/Cinnamon) instead read the
+// standard XDG autostart convention: a .desktop file in ~/.config/autostart/.
+const LINUX_AUTOSTART_PATH = join(homedir(), '.config', 'autostart', 'gaze-buddy-hub.desktop');
+
+function getLaunchAtLogin(): boolean {
+	if (process.platform === 'linux') {
+		if (!existsSync(LINUX_AUTOSTART_PATH)) return false;
+		try {
+			return readFileSync(LINUX_AUTOSTART_PATH, 'utf8').includes('X-GNOME-Autostart-enabled=true');
+		} catch {
+			return false;
+		}
+	}
+	return app.getLoginItemSettings().openAtLogin;
+}
+
+function setLaunchAtLogin(enabled: boolean): void {
+	if (process.platform === 'linux') {
+		if (!enabled) {
+			try { unlinkSync(LINUX_AUTOSTART_PATH); } catch {}
+			return;
+		}
+		mkdirSync(dirname(LINUX_AUTOSTART_PATH), { recursive: true });
+		writeFileSync(
+			LINUX_AUTOSTART_PATH,
+			`[Desktop Entry]\nType=Application\nName=Gaze Buddy Hub\nExec=${process.execPath}\nComment=Gaze Buddy Hub\nX-GNOME-Autostart-enabled=true\nHidden=false\nTerminal=false\n`,
+			'utf8',
+		);
+		return;
+	}
+	app.setLoginItemSettings({ openAtLogin: enabled });
+}
+
 app.whenReady().then(() => {
-	const todoStore = createJsonStore<Todo>('todos.json');
-	const pomodoroStore = createJsonStore<PomodoroPreset>('pomodoros.json');
+	const listsStore = createJsonStore<TaskList>('lists.json');
+	const sectionsStore = createJsonStore<Section>('sections.json');
+	const presetsStore = createJsonStore<PomodoroPreset>('pomodoroPresets.json');
+	ensureSeeded(listsStore, sectionsStore, presetsStore);
 
-	ipcMain.handle('todos:list', () => todoStore.list());
-	ipcMain.handle('todos:create', (_, data: Omit<Todo, 'id' | 'createdAt' | 'updatedAt'>) => todoStore.create(data));
-	ipcMain.handle('todos:update', (_, id: string, patch: Partial<Omit<Todo, 'id' | 'createdAt'>>) => todoStore.update(id, patch));
-	ipcMain.handle('todos:remove', (_, id: string) => todoStore.remove(id));
+	registerCrudIpc('lists', listsStore);
+	registerCrudIpc('sections', sectionsStore);
+	registerCrudIpc('tasks', createJsonStore<Task>('tasks.json'));
+	registerCrudIpc('tags', createJsonStore<Tag>('tags.json'));
+	registerCrudIpc('events', createJsonStore<CalendarEvent>('events.json'));
+	registerCrudIpc('pomodoroPresets', presetsStore);
 
-	ipcMain.handle('pomodoros:list', () => pomodoroStore.list());
-	ipcMain.handle('pomodoros:create', (_, data: Omit<PomodoroPreset, 'id' | 'createdAt' | 'updatedAt'>) => pomodoroStore.create(data));
-	ipcMain.handle('pomodoros:update', (_, id: string, patch: Partial<Omit<PomodoroPreset, 'id' | 'createdAt'>>) => pomodoroStore.update(id, patch));
-	ipcMain.handle('pomodoros:remove', (_, id: string) => pomodoroStore.remove(id));
+	registerValueIpc('pomodoroSettings', createJsonValueStore<PomodoroSettings>('pomodoroSettings.json', DEFAULT_POMODORO_SETTINGS));
+	registerValueIpc('pomodoroStats', createJsonValueStore<PomodoroStats>('pomodoroStats.json', DEFAULT_POMODORO_STATS));
+
+	wifiStore = createJsonValueStore<WifiConfig>('wifi.json', DEFAULT_WIFI_CONFIG);
+	registerWifiIpc();
 
 	createWindow();
 
+	const trayIconPath = app.isPackaged
+		? join(process.resourcesPath, 'icons', 'tray.png')
+		: join(__dirname, '../build/icons/tray.png');
+	tray = new Tray(nativeImage.createFromPath(trayIconPath));
+	tray.setToolTip('Gaze Buddy Hub');
+	tray.setContextMenu(Menu.buildFromTemplate([
+		{ label: 'Show Gaze Buddy Hub', click: () => mainWindow?.show() },
+		{ type: 'separator' },
+		{
+			label: 'Launch at login',
+			type: 'checkbox',
+			checked: getLaunchAtLogin(),
+			click: (menuItem) => setLaunchAtLogin(menuItem.checked),
+		},
+		{ type: 'separator' },
+		{ label: 'Quit', click: () => { isQuitting = true; app.quit(); } },
+	]));
+	tray.on('click', () => mainWindow?.show());
+
 	app.on('activate', function () {
 		if (BrowserWindow.getAllWindows().length === 0) createWindow();
+		else mainWindow?.show();
 	});
 });
 
+// With mainWindow's own 'close' handler hiding instead of destroying it, this
+// only fires on a real quit (tray "Quit", or macOS Cmd+Q) — safe to always
+// stop background work here.
 app.on('window-all-closed', () => {
 	if (autoConnectTimer) clearInterval(autoConnectTimer);
 	if (windowTrackerTimer) clearInterval(windowTrackerTimer);
-	if (process.platform !== 'darwin') {
-		app.quit();
-	}
+});
+
+app.on('before-quit', () => {
+	isQuitting = true;
 });
 
 autoUpdater.on('update-downloaded', () => {
@@ -415,6 +984,11 @@ ipcMain.handle('firmware:flash', async () => {
 		startAutoConnectScanner();
 	}
 });
+
+ipcMain.handle('claude:isSetup', () => isClaudeHooksSetup());
+ipcMain.handle('claude:setup', () => { setupClaudeHooks(); return true; });
+ipcMain.handle('claude:getUsage', () => ({ ...claudeUsage }));
+ipcMain.handle('claude:getSource', () => claudeCodeSource);
 
 ipcMain.on('pomodoro:setActive', (_, active: boolean) => {
 	isPomodoroActive = active;
