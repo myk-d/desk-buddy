@@ -52,7 +52,7 @@
 
 #include <Arduino.h>
 
-#define FIRMWARE_VERSION "0.3.0"
+#define FIRMWARE_VERSION "0.3.1"
 
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
