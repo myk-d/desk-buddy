@@ -39,7 +39,7 @@ Expect: HTML starting with `<!DOCTYPE html>`, containing the `/status.json`-poll
 Get the current token from an installed hook script:
 
 ```bash
-TOKEN=$(grep -oP "X-Gaze-Token': '\K[a-f0-9]+" ~/.claude/hooks/stop.js)
+TOKEN=$(grep -oP "X-Gaze-Token: \K[a-f0-9]+" ~/.claude/hooks/stop.sh)
 ```
 
 Test auth (each should be a single Bash call combining trigger + check, to avoid a concurrent Claude Code hook clobbering device state between separate tool calls):
