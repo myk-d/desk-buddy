@@ -394,7 +394,6 @@ function handleClaudeUsage(usage: Partial<ClaudeUsage>) {
 	claudeUsage = { ...claudeUsage, ...usage, hasData: true };
 	mainWindow?.webContents.send('claude:usage', { ...claudeUsage });
 
-	if (!isDeviceConnected || !activePort?.isOpen) return;
 	if (claudeUsage.fiveHourPct === null || claudeUsage.sevenDayPct === null) return;
 
 	// Firmware has no RTC, so it can't turn an epoch timestamp into a countdown —
@@ -402,11 +401,37 @@ function handleClaudeUsage(usage: Partial<ClaudeUsage>) {
 	// the device just displays it.
 	const secsUntil = (resetsAt: number | null) =>
 		resetsAt ? Math.max(0, Math.round(resetsAt - Date.now() / 1000)) : 0;
+	const fiveHourSecsLeft = secsUntil(claudeUsage.fiveHourResetsAt);
+	const sevenDaySecsLeft = secsUntil(claudeUsage.sevenDayResetsAt);
 
-	activePort.write(
-		`#USAGE:${Math.round(claudeUsage.fiveHourPct)},${secsUntil(claudeUsage.fiveHourResetsAt)},` +
-		`${Math.round(claudeUsage.sevenDayPct)},${secsUntil(claudeUsage.sevenDayResetsAt)}\n`,
-	);
+	// This is the account-usage-API poll's only path to the device — unlike
+	// the state hooks, it runs from this app's own main process rather than
+	// a Claude Code hook script, so it has no other route in. It used to
+	// write over USB serial only, which silently did nothing on a WiFi-only
+	// connection (state changes still worked, since hooks POST to
+	// gaze-buddy.local directly, but usage bars never arrived). POST
+	// directly when WiFi is configured, mirroring wifi:sendNotify below.
+	const wifi = wifiStore?.get() ?? DEFAULT_WIFI_CONFIG;
+	if (wifi.configured && wifi.token) {
+		const payload = JSON.stringify({
+			fiveHourPct: Math.round(claudeUsage.fiveHourPct),
+			fiveHourSecsLeft,
+			sevenDayPct: Math.round(claudeUsage.sevenDayPct),
+			sevenDaySecsLeft,
+		});
+		const req = http.request({
+			hostname: 'gaze-buddy.local', port: 80, path: '/claude-usage', method: 'POST',
+			headers: { 'X-Gaze-Token': wifi.token, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+		}, (res) => res.resume());
+		req.on('error', () => {});
+		req.setTimeout(3000, () => req.destroy());
+		req.write(payload);
+		req.end();
+	}
+
+	if (isDeviceConnected && activePort?.isOpen) {
+		activePort.write(`#USAGE:${Math.round(claudeUsage.fiveHourPct)},${fiveHourSecsLeft},${Math.round(claudeUsage.sevenDayPct)},${sevenDaySecsLeft}\n`);
+	}
 }
 
 // Fired when the device received a Claude Code update over WiFi directly
