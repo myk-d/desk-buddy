@@ -116,41 +116,34 @@ function currentHookTarget(): HookTarget {
 	return localHookTarget();
 }
 
-// Calls `curl` directly rather than through any scripting interpreter —
-// bash, PowerShell, and node are each missing on *some* real setup (bash
-// needs WSL/Git Bash on Windows; node isn't guaranteed at all if Claude Code
-// was installed as a standalone binary rather than via npm). curl itself has
-// no such gap: bundled with Windows since 10 (1803)/11, and part of the base
-// OS on macOS/Linux. $CLAUDE_CODE_ENTRYPOINT (e.g. "cli" / "claude-vscode")
-// tells the app whether this fired from a terminal session or the VS Code
-// extension — used to explain why usage bars (statusLine-only) might be
-// empty despite this state hook firing fine from either front-end.
+// Builds the hook's `command` string *directly* — no intermediate script
+// file, no `bash`/`cmd /c`/`node` wrapper. Claude Code already runs this
+// string through a shell itself (cmd.exe on Windows), so wrapping it in our
+// own shell invocation creates a nested cmd.exe call — and nested cmd.exe
+// quote-parsing is notoriously fragile; it silently mangled our hooks on a
+// real Windows machine even though the wrapped .cmd file worked fine when
+// run directly. Calling `curl` inline sidesteps that: only one shell layer
+// exists, whatever Claude Code itself spawns, matching exactly what a
+// manual test would run. curl itself has no missing-dependency risk either
+// (bundled with Windows since 10 1803/11, part of the base OS on
+// macOS/Linux) — unlike bash (needs WSL/Git Bash on Windows) or node (not
+// guaranteed if Claude Code was installed as a standalone binary).
+// $CLAUDE_CODE_ENTRYPOINT (e.g. "cli" / "claude-vscode") tells the app
+// whether this fired from a terminal session or the VS Code extension —
+// used to explain why usage bars (statusLine-only) might be empty despite
+// this state hook firing fine from either front-end.
 const IS_WINDOWS = process.platform === 'win32';
 
-function buildStateHook(target: HookTarget, state: string): string {
+function buildStateHookCommand(target: HookTarget, state: string): string {
+	const logPath = join(CLAUDE_HOOKS_DIR, 'hook.log');
 	if (IS_WINDOWS) {
 		const tokenHeader = target.token ? ` -H "X-Gaze-Token: ${target.token}"` : '';
-		// Temporary diagnostic: log curl's actual result (exit code + any error
-		// text) instead of discarding it, to track down why delivery is
-		// intermittent on Windows — `-s` alone also swallows error text, so
-		// `-S` is added to keep it. Revisit once the cause is confirmed.
-		const logPath = join(CLAUDE_HOOKS_DIR, 'hook.log');
-		// cmd.exe leaves %VAR% as a literal string when unset (unlike POSIX's
-		// ${VAR:-default}), so an explicit `if defined` check is required.
-		return `@echo off\r
-if defined CLAUDE_CODE_ENTRYPOINT (set "SRC=%CLAUDE_CODE_ENTRYPOINT%") else (set "SRC=unknown")\r
-curl -sS -f -X POST http://${target.host}:${target.port}/claude-state -H "Content-Type: application/json"${tokenHeader} -d "{\\"state\\":\\"${state}\\",\\"source\\":\\"%SRC%\\"}" >>"${logPath}" 2>&1\r
-echo %date% %time% [${state}] curl_exit=%errorlevel% target=${target.host}:${target.port} >>"${logPath}"\r
-exit /b 0\r
-`;
+		// `-S` keeps error text despite `-s` (silent normally swallows both).
+		// Logging stays temporary, to confirm this actually fixes delivery.
+		return `curl -sS -f -X POST http://${target.host}:${target.port}/claude-state -H "Content-Type: application/json"${tokenHeader} -d "{\\"state\\":\\"${state}\\",\\"source\\":\\"%CLAUDE_CODE_ENTRYPOINT%\\"}" >>"${logPath}" 2>&1`;
 	}
-	const tokenHeader = target.token ? ` \\\n  -H 'X-Gaze-Token: ${target.token}'` : '';
-	return `#!/bin/sh
-cat > /dev/null
-curl -sf -X POST http://${target.host}:${target.port}/claude-state \\
-  -H 'Content-Type: application/json'${tokenHeader} \\
-  -d "{\\"state\\":\\"${state}\\",\\"source\\":\\"\${CLAUDE_CODE_ENTRYPOINT:-unknown}\\"}" >/dev/null 2>&1 || true
-`;
+	const tokenHeader = target.token ? ` -H 'X-Gaze-Token: ${target.token}'` : '';
+	return `curl -sS -f -X POST http://${target.host}:${target.port}/claude-state -H 'Content-Type: application/json'${tokenHeader} -d "{\\"state\\":\\"${state}\\",\\"source\\":\\"\${CLAUDE_CODE_ENTRYPOINT:-unknown}\\"}" >>"${logPath}" 2>&1 || true`;
 }
 
 // Fed the real rate_limits (five_hour/seven_day used_percentage + resetsAt) by
@@ -225,17 +218,11 @@ function isClaudeHooksSetup(): boolean {
 function setupClaudeHooks(): void {
 	mkdirSync(CLAUDE_HOOKS_DIR, { recursive: true });
 	const target = currentHookTarget();
-	const ext = IS_WINDOWS ? 'cmd' : 'sh';
-	const runner = IS_WINDOWS ? 'cmd /c' : 'sh';
-	const scriptPath = (name: string) => join(CLAUDE_HOOKS_DIR, `${name}.${ext}`);
-	writeFileSync(scriptPath('pre-tool'), buildStateHook(target, 'working'), { mode: 0o755 });
-	writeFileSync(scriptPath('notification'), buildStateHook(target, 'waiting'), { mode: 0o755 });
-	writeFileSync(scriptPath('stop'), buildStateHook(target, 'done'), { mode: 0o755 });
 	writeFileSync(join(CLAUDE_HOOKS_DIR, 'statusline.js'), buildStatuslineHook(target), { mode: 0o755 });
-	// Older formats from earlier iterations of this fix (bash, then node) —
-	// remove so they don't linger as dead files while debugging.
+	// Older formats from earlier iterations of this fix (bash, then node,
+	// then a cmd-wrapped batch file) — remove so they don't linger as dead
+	// files while debugging.
 	for (const stale of ['pre-tool.sh', 'notification.sh', 'stop.sh', 'pre-tool.js', 'notification.js', 'stop.js', 'pre-tool.cmd', 'notification.cmd', 'stop.cmd']) {
-		if (stale.endsWith(`.${ext}`)) continue;
 		try { unlinkSync(join(CLAUDE_HOOKS_DIR, stale)); } catch {}
 	}
 
@@ -246,9 +233,9 @@ function setupClaudeHooks(): void {
 		...(settings.hooks as Record<string, unknown> ?? {}),
 		// PreToolUse is matched per-tool, so it needs an explicit wildcard.
 		// Stop/Notification aren't tool-specific — they take no `matcher` field at all.
-		PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: `${runner} "${scriptPath('pre-tool')}"` }] }],
-		Stop:        [{ hooks: [{ type: 'command', command: `${runner} "${scriptPath('stop')}"` }] }],
-		Notification:[{ hooks: [{ type: 'command', command: `${runner} "${scriptPath('notification')}"` }] }],
+		PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: buildStateHookCommand(target, 'working') }] }],
+		Stop:        [{ hooks: [{ type: 'command', command: buildStateHookCommand(target, 'done') }] }],
+		Notification:[{ hooks: [{ type: 'command', command: buildStateHookCommand(target, 'waiting') }] }],
 	};
 	settings.statusLine = { type: 'command', command: `node ${join(CLAUDE_HOOKS_DIR, 'statusline.js')}` };
 	writeFileSync(CLAUDE_SETTINGS_PATH, JSON.stringify(settings, null, 2));
