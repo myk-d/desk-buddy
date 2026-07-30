@@ -25,7 +25,7 @@ fuser /dev/ttyACM0 2>&1 || echo "port free"
 The device's token lives in the currently-installed Claude Code hook scripts:
 
 ```
-TOKEN=$(grep -oP "X-Gaze-Token: \K[a-f0-9]+" ~/.claude/hooks/stop.sh)
+TOKEN=$(grep -oP "X-Gaze-Token': '\K[a-f0-9]+" ~/.claude/hooks/stop.js)
 ```
 
 Common checks:
