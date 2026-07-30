@@ -130,11 +130,17 @@ const IS_WINDOWS = process.platform === 'win32';
 function buildStateHook(target: HookTarget, state: string): string {
 	if (IS_WINDOWS) {
 		const tokenHeader = target.token ? ` -H "X-Gaze-Token: ${target.token}"` : '';
+		// Temporary diagnostic: log curl's actual result (exit code + any error
+		// text) instead of discarding it, to track down why delivery is
+		// intermittent on Windows — `-s` alone also swallows error text, so
+		// `-S` is added to keep it. Revisit once the cause is confirmed.
+		const logPath = join(CLAUDE_HOOKS_DIR, 'hook.log');
 		// cmd.exe leaves %VAR% as a literal string when unset (unlike POSIX's
 		// ${VAR:-default}), so an explicit `if defined` check is required.
 		return `@echo off\r
 if defined CLAUDE_CODE_ENTRYPOINT (set "SRC=%CLAUDE_CODE_ENTRYPOINT%") else (set "SRC=unknown")\r
-curl -sf -X POST http://${target.host}:${target.port}/claude-state -H "Content-Type: application/json"${tokenHeader} -d "{\\"state\\":\\"${state}\\",\\"source\\":\\"%SRC%\\"}" >NUL 2>&1\r
+curl -sS -f -X POST http://${target.host}:${target.port}/claude-state -H "Content-Type: application/json"${tokenHeader} -d "{\\"state\\":\\"${state}\\",\\"source\\":\\"%SRC%\\"}" >>"${logPath}" 2>&1\r
+echo %date% %time% [${state}] curl_exit=%errorlevel% target=${target.host}:${target.port} >>"${logPath}"\r
 exit /b 0\r
 `;
 	}
