@@ -1,6 +1,6 @@
 # Claude Code integration
 
-Gaze Buddy can show live Claude Code status and usage on its screen: a dedicated
+Beak Buddy can show live Claude Code status and usage on its screen: a dedicated
 full-screen view that turns blue while Claude is working, green when a task
 finishes, and red when Claude needs your input — plus two progress bars for
 your 5-hour session limit and 7-day weekly limit.
@@ -9,12 +9,12 @@ your 5-hour session limit and 7-day weekly limit.
 
 1. Make sure [Claude Code](https://code.claude.com) is installed and you've
    used it at least once (so `~/.claude/` exists).
-2. Open **Gaze Buddy Hub** → **Device** page.
+2. Open **Beak Buddy Hub** → **Device** page.
 3. Under "Claude Code," click **Setup Claude Code integration**.
 
 That's it — no manual file editing. The button writes a few small scripts to
 `~/.claude/hooks/` and registers them in `~/.claude/settings.json`. If you ever
-move Gaze Buddy Hub to a different computer, repeat step 3 there — the status
+move Beak Buddy Hub to a different computer, repeat step 3 there — the status
 on the Device page will show "not configured" as a reminder.
 
 ## What you'll see, and where

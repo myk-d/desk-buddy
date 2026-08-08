@@ -140,15 +140,19 @@ function AppShell({ status, connectedPath, deviceLog, setDeviceLog, logEndRef, s
 								setCurrentMode(mode);
 							}}
 							onClearLog={() => setDeviceLog([])}
+						/>
+					)}
+					{activePage === 'tasks' && <TasksPage />}
+					{activePage === 'calendar' && <CalendarPage />}
+					{activePage === 'device' && (
+						<DevicePage
+							connected={connected}
 							onReset={() => {
 								sendPacket('#R\n');
 								setCurrentMode('IDLE');
 							}}
 						/>
 					)}
-					{activePage === 'tasks' && <TasksPage />}
-					{activePage === 'calendar' && <CalendarPage />}
-					{activePage === 'device' && <DevicePage connected={connected} />}
 					{activePage === 'pomodoro' && <PomodoroPage />}
 				</main>
 			</div>

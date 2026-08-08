@@ -1,6 +1,6 @@
 ---
 name: add-ipc-channel
-description: Wire up a new IPC channel between the Electron main process and renderer in the Gaze Buddy Hub desktop app. Use for any new window.api.* surface not tied to a device WiFi HTTP endpoint (see add-wifi-endpoint for that case).
+description: Wire up a new IPC channel between the Electron main process and renderer in the Beak Buddy Hub desktop app. Use for any new window.api.* surface not tied to a device WiFi HTTP endpoint (see add-wifi-endpoint for that case).
 ---
 
 # Add a new IPC channel

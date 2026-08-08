@@ -8,10 +8,9 @@ interface Props {
 	logEndRef: RefObject<HTMLDivElement>;
 	onCommand: (packet: string, mode: string) => void;
 	onClearLog: () => void;
-	onReset: () => void;
 }
 
-export function DashboardPage({ connected, currentMode, deviceLog, logEndRef, onCommand, onClearLog, onReset }: Props) {
+export function DashboardPage({ connected, currentMode, deviceLog, logEndRef, onCommand, onClearLog }: Props) {
 	return (
 		<div className="flex h-full min-h-0 flex-col gap-6 overflow-y-auto px-8 py-8">
 			<div>
@@ -44,19 +43,6 @@ export function DashboardPage({ connected, currentMode, deviceLog, logEndRef, on
 							</button>
 						))}
 					</div>
-					<button
-						disabled={!connected}
-						onClick={onReset}
-						className={`rounded-lg border p-2.5 text-[13px] font-semibold transition disabled:cursor-not-allowed ${
-							connected
-								? 'cursor-pointer border-red-200 bg-red-50 text-red-600'
-								: 'border-stone-200 bg-transparent text-stone-300'
-						}`}
-						onMouseEnter={(e) => connected && ((e.target as HTMLButtonElement).style.filter = 'brightness(1.3)')}
-						onMouseLeave={(e) => ((e.target as HTMLButtonElement).style.filter = 'brightness(1)')}
-					>
-						RESET DEVICE
-					</button>
 				</div>
 			</div>
 

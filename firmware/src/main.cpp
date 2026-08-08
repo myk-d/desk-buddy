@@ -1,6 +1,6 @@
 /**
  * ╔══════════════════════════════════════════════════════════╗
- * ║            GAZE BUDDY — Custom Firmware v3.0              ║
+ * ║            BEAK BUDDY — Custom Firmware v3.0              ║
  * ║      ESP32-S3 N16R8 + ILI9341 320×240 + NeoPixel          ║
  * ║                                                            ║
  * ║  Власна версія, без сервоприводу/U8g2. WiFi опціональний,  ║
@@ -30,7 +30,7 @@
  *   #WIFI:FORGET\n                      — стирає збережені дані, від'єднує
  *
  * Після підключення до WiFi піднімається локальний веб-сервер (порт 80,
- * mDNS "gaze-buddy.local") з POST /claude-state і /claude-usage — той самий
+ * mDNS "beak-buddy.local") з POST /claude-state і /claude-usage — той самий
  * формат тіла запиту, що вже POST'ить desktop-застосунок на localhost:7842,
  * плюс заголовок X-Gaze-Token (той самий токен, що передавався в CONNECT).
  * Дозволяє Claude Code оновлювати екран напряму, коли застосунок закритий.
@@ -66,7 +66,7 @@
 #include "angry.h"
 #include "love.h"
 
-#include "display.h"        // LGFX_GazeBuddy, lcd, pixels, OLED_*, кольори
+#include "display.h"        // LGFX_BeakBuddy, lcd, pixels, OLED_*, кольори
 #include "anim_players.h"    // MonoCanvas/canvas, AnimPlayer/player, ColorAnimPlayer/colorPlayer
 #include "gaze_state.h"      // GazeState enum + currentState/activeIsColorPlayer/pomoLocked/claude* globals
 
@@ -122,6 +122,7 @@ void loop()
   wifiPoll(); // завжди, незалежно від currentState — інакше HTTP-запити не обробляються під час Pomodoro/Claude екранів
   pollClaudeDoneTimeout(); // так само — інакше "Done" ніколи не згасне без запущеного застосунку
   pollNotifyTimeout(); // так само — інакше notify-екран ніколи не згасне без запущеного застосунку
+  pollClaudeActivityPulse(); // так само — NeoPixel мусить дихати, поки currentState == ST_CLAUDE
 
   // [НОВЕ] Pomodoro / Claude Code / Notify full-screen — без анімації, нічого тікати не потрібно
   if (currentState == ST_POMO_WORK || currentState == ST_POMO_BREAK || currentState == ST_POMO_LONGBREAK || currentState == ST_CLAUDE || currentState == ST_NOTIFY)

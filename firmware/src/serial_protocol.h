@@ -60,6 +60,8 @@ void handlePacket(const String &cmd)
       subCode = 2;
     else if (sub == "waiting")
       subCode = 3;
+    else if (sub == "thinking")
+      subCode = 4;
     if (subCode >= 0)
     {
       applyClaudeState(subCode);

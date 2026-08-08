@@ -30,6 +30,11 @@ int claudeSubState = 0;
 // 3s revert, now done here so it works with or without the app.
 unsigned long claudeDoneAtMs = 0;
 const unsigned long CLAUDE_DONE_DISPLAY_MS = 3000;
+// Timestamp of the last "working" ping (PreToolUse), used to drive the
+// activity-aware NeoPixel breathing pulse in pollClaudeActivityPulse() — a
+// static solid color while working looked identical whether Claude was mid
+// tool-call-burst or idling on one slow command.
+unsigned long lastClaudeWorkingPingMs = 0;
 float claudeFiveHourPct = -1;  // -1 = ще немає даних
 float claudeSevenDayPct = -1;
 long claudeFiveHourSecsLeft = -1;  // секунд до скидання ліміту (рахує додаток, не прошивка)

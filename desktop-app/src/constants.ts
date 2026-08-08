@@ -1,9 +1,13 @@
+// One consistent 500/600-weight tone per button so each reads as a distinct
+// color at a glance — WORKING reuses the same brand purple as the Claude
+// Code "working" indicator elsewhere in the app (DevicePage's STATE_COLOR),
+// since both represent the same idea (actively focused).
 export const COMMANDS = [
-	{ label: 'IDLE',    packet: '#ANIM:idle\n',  mode: 'IDLE',    bg: '#334155', activeBg: '#334155' },
-	{ label: 'RELAX',   packet: '#ANIM:relax\n', mode: 'RELAX',   bg: '#fff59a', activeBg: '#f3ff51' },
-	{ label: 'WORKING', packet: '#ANIM:focus\n', mode: 'WORKING', bg: '#334155', activeBg: '#334155' },
-	{ label: 'SUCCESS', packet: '#ANIM:love\n',  mode: 'SUCCESS', bg: '#16a34a', activeBg: '#15803d' },
-	{ label: 'ERROR',   packet: '#ANIM:error\n', mode: 'ERROR',   bg: '#dc2626', activeBg: '#b91c1c' },
+	{ label: 'IDLE',    packet: '#ANIM:idle\n',  mode: 'IDLE',    bg: '#78716c' }, // stone-500
+	{ label: 'RELAX',   packet: '#ANIM:relax\n', mode: 'RELAX',   bg: '#0ea5e9' }, // sky-500
+	{ label: 'WORKING', packet: '#ANIM:focus\n', mode: 'WORKING', bg: '#a855f7' }, // brand-500
+	{ label: 'SUCCESS', packet: '#ANIM:love\n',  mode: 'SUCCESS', bg: '#16a34a' }, // green-600
+	{ label: 'ERROR',   packet: '#ANIM:error\n', mode: 'ERROR',   bg: '#dc2626' }, // red-600
 ] as const;
 
 export const ANIM_MODE_MAP: Record<string, string> = {

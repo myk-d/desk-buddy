@@ -60,7 +60,7 @@ let deviceFirmwareVersion: string | null = null;
 // (terminated by \n) has arrived, so regexes never see truncated data.
 let serialLineBuffer = '';
 
-type ClaudeCodeState = 'idle' | 'working' | 'done' | 'waiting';
+type ClaudeCodeState = 'idle' | 'thinking' | 'working' | 'done' | 'waiting';
 let claudeCodeState: ClaudeCodeState = 'idle';
 let claudeResetTimer: NodeJS.Timeout | null = null;
 
@@ -112,7 +112,7 @@ function localHookTarget(): HookTarget {
 
 function currentHookTarget(): HookTarget {
 	const wifi = wifiStore?.get() ?? DEFAULT_WIFI_CONFIG;
-	if (wifi.configured && wifi.token) return { host: 'gaze-buddy.local', port: 80, token: wifi.token };
+	if (wifi.configured && wifi.token) return { host: 'beak-buddy.local', port: 80, token: wifi.token };
 	return localHookTarget();
 }
 
@@ -232,10 +232,24 @@ function setupClaudeHooks(): void {
 	settings.hooks = {
 		...(settings.hooks as Record<string, unknown> ?? {}),
 		// PreToolUse is matched per-tool, so it needs an explicit wildcard.
-		// Stop/Notification aren't tool-specific — they take no `matcher` field at all.
+		// Stop/Notification/UserPromptSubmit aren't tool-specific — they take
+		// no `matcher` field at all.
+		//
+		// Notification does fire for several unrelated sub-types (auth_success,
+		// agent_completed, etc, not just "waiting on you") — tried scoping it
+		// with a matcher (permission_prompt|idle_prompt|elicitation_dialog|
+		// agent_needs_input) but that's unconfirmed syntax for this hook type,
+		// and it's suspected of having broken PreToolUse/Stop too (an invalid
+		// entry may make Claude Code reject the whole hooks block, not just
+		// this one) — reverted until the correct syntax is confirmed.
 		PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: buildStateHookCommand(target, 'working') }] }],
 		Stop:        [{ hooks: [{ type: 'command', command: buildStateHookCommand(target, 'done') }] }],
 		Notification:[{ hooks: [{ type: 'command', command: buildStateHookCommand(target, 'waiting') }] }],
+		// Fires the instant a prompt is submitted, before Claude does anything
+		// else — covers the gap between "you asked" and either the first tool
+		// call (PreToolUse takes over from there) or a pure-text response with
+		// no tools at all (Stop fires next, straight from "thinking" to "done").
+		UserPromptSubmit: [{ hooks: [{ type: 'command', command: buildStateHookCommand(target, 'thinking') }] }],
 	};
 	settings.statusLine = { type: 'command', command: `node ${join(CLAUDE_HOOKS_DIR, 'statusline.js')}` };
 	writeFileSync(CLAUDE_SETTINGS_PATH, JSON.stringify(settings, null, 2));
@@ -409,7 +423,7 @@ function handleClaudeUsage(usage: Partial<ClaudeUsage>) {
 	// a Claude Code hook script, so it has no other route in. It used to
 	// write over USB serial only, which silently did nothing on a WiFi-only
 	// connection (state changes still worked, since hooks POST to
-	// gaze-buddy.local directly, but usage bars never arrived). POST
+	// beak-buddy.local directly, but usage bars never arrived). POST
 	// directly when WiFi is configured, mirroring wifi:sendNotify below.
 	const wifi = wifiStore?.get() ?? DEFAULT_WIFI_CONFIG;
 	if (wifi.configured && wifi.token) {
@@ -420,7 +434,7 @@ function handleClaudeUsage(usage: Partial<ClaudeUsage>) {
 			sevenDaySecsLeft,
 		});
 		const req = http.request({
-			hostname: 'gaze-buddy.local', port: 80, path: '/claude-usage', method: 'POST',
+			hostname: 'beak-buddy.local', port: 80, path: '/claude-usage', method: 'POST',
 			headers: { 'X-Gaze-Token': wifi.token, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
 		}, (res) => res.resume());
 		req.on('error', () => {});
@@ -439,7 +453,7 @@ function handleClaudeUsage(usage: Partial<ClaudeUsage>) {
 // UI stays in sync — must NOT write back to the device (it already knows;
 // echoing would be circular).
 function handleClaudeRelay(state: string) {
-	if (state !== 'idle' && state !== 'working' && state !== 'done' && state !== 'waiting') return;
+	if (state !== 'idle' && state !== 'thinking' && state !== 'working' && state !== 'done' && state !== 'waiting') return;
 	claudeCodeState = state;
 	mainWindow?.webContents.send('claude:state', state);
 }
@@ -858,7 +872,7 @@ function registerWifiIpc() {
 			if (!wifi.configured || !wifi.token) { reject(new Error('WiFi not configured')); return; }
 			const payload = JSON.stringify({ title, message, color: 0xD3AB, durationMs: 6000 });
 			const req = http.request({
-				hostname: 'gaze-buddy.local', port: 80, path: '/notify', method: 'POST',
+				hostname: 'beak-buddy.local', port: 80, path: '/notify', method: 'POST',
 				headers: {
 					'X-Gaze-Token': wifi.token,
 					'Content-Type': 'application/json',
@@ -881,7 +895,7 @@ function registerWifiIpc() {
 // only — a silent no-op on Linux (no .desktop file, always reports false).
 // Linux desktop environments (GNOME/KDE/XFCE/Cinnamon) instead read the
 // standard XDG autostart convention: a .desktop file in ~/.config/autostart/.
-const LINUX_AUTOSTART_PATH = join(homedir(), '.config', 'autostart', 'gaze-buddy-hub.desktop');
+const LINUX_AUTOSTART_PATH = join(homedir(), '.config', 'autostart', 'beak-buddy-hub.desktop');
 
 function getLaunchAtLogin(): boolean {
 	if (process.platform === 'linux') {
@@ -904,7 +918,7 @@ function setLaunchAtLogin(enabled: boolean): void {
 		mkdirSync(dirname(LINUX_AUTOSTART_PATH), { recursive: true });
 		writeFileSync(
 			LINUX_AUTOSTART_PATH,
-			`[Desktop Entry]\nType=Application\nName=Gaze Buddy Hub\nExec=${process.execPath}\nComment=Gaze Buddy Hub\nX-GNOME-Autostart-enabled=true\nHidden=false\nTerminal=false\n`,
+			`[Desktop Entry]\nType=Application\nName=Beak Buddy Hub\nExec=${process.execPath}\nComment=Beak Buddy Hub\nX-GNOME-Autostart-enabled=true\nHidden=false\nTerminal=false\n`,
 			'utf8',
 		);
 		return;
@@ -933,13 +947,18 @@ app.whenReady().then(() => {
 
 	createWindow();
 
+	// Windows' notification area is unreliable rendering plain PNGs (shows up
+	// blank in the taskbar/title bar, which inherits the packaged .exe's
+	// embedded icon instead, but not in the tray) — a proper multi-resolution
+	// .ico avoids that; macOS/Linux tray icons render PNGs fine as-is.
+	const trayIconName = process.platform === 'win32' ? 'tray.ico' : 'tray.png';
 	const trayIconPath = app.isPackaged
-		? join(process.resourcesPath, 'icons', 'tray.png')
-		: join(__dirname, '../build/icons/tray.png');
+		? join(process.resourcesPath, 'icons', trayIconName)
+		: join(__dirname, '../build/icons', trayIconName);
 	tray = new Tray(nativeImage.createFromPath(trayIconPath));
-	tray.setToolTip('Gaze Buddy Hub');
+	tray.setToolTip('Beak Buddy Hub');
 	tray.setContextMenu(Menu.buildFromTemplate([
-		{ label: 'Show Gaze Buddy Hub', click: () => mainWindow?.show() },
+		{ label: 'Show Beak Buddy Hub', click: () => mainWindow?.show() },
 		{ type: 'separator' },
 		{
 			label: 'Launch at login',
@@ -982,7 +1001,7 @@ function httpsGet(url: string): Promise<string> {
 	return new Promise((resolve, reject) => {
 		const req = https.get(
 			url,
-			{ headers: { 'User-Agent': 'gaze-buddy-hub', Accept: 'application/vnd.github.v3+json' } },
+			{ headers: { 'User-Agent': 'beak-buddy-hub', Accept: 'application/vnd.github.v3+json' } },
 			(res) => {
 				if (res.statusCode === 301 || res.statusCode === 302) {
 					httpsGet(res.headers.location!).then(resolve, reject);
@@ -1001,7 +1020,7 @@ function httpsGet(url: string): Promise<string> {
 
 function httpsBinary(url: string): Promise<Buffer> {
 	return new Promise((resolve, reject) => {
-		const req = https.get(url, { headers: { 'User-Agent': 'gaze-buddy-hub' } }, (res) => {
+		const req = https.get(url, { headers: { 'User-Agent': 'beak-buddy-hub' } }, (res) => {
 			if (res.statusCode === 301 || res.statusCode === 302) {
 				httpsBinary(res.headers.location!).then(resolve, reject);
 				return;
@@ -1058,7 +1077,7 @@ ipcMain.handle('firmware:flash', async () => {
 		const wifi = wifiStore?.get() ?? DEFAULT_WIFI_CONFIG;
 		if (wifi.configured && wifi.token) {
 			try {
-				await otaFlash('gaze-buddy.local', wifi.token, Buffer.from(bin), (pct, status) => {
+				await otaFlash('beak-buddy.local', wifi.token, Buffer.from(bin), (pct, status) => {
 					mainWindow?.webContents.send('firmware:progress', pct, status);
 				});
 				return release.version;

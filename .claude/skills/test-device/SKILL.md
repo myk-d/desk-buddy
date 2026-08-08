@@ -1,11 +1,11 @@
 ---
 name: test-device
-description: Run the standard manual test pass against the physical Gaze Buddy device — diagnostics, dashboard, notify auth, non-blocking WiFi scan, Claude Code hooks. Use after firmware changes touching wifi_manager.h, web_server.h, or serial_protocol.h.
+description: Run the standard manual test pass against the physical Beak Buddy device — diagnostics, dashboard, notify auth, non-blocking WiFi scan, Claude Code hooks. Use after firmware changes touching wifi_manager.h, web_server.h, or serial_protocol.h.
 ---
 
 # Test the physical device
 
-A repeatable smoke-test pass for the Gaze Buddy device's WiFi/HTTP surface and serial protocol. Run this after firmware changes to those areas, or whenever device behavior is in question.
+A repeatable smoke-test pass for the Beak Buddy device's WiFi/HTTP surface and serial protocol. Run this after firmware changes to those areas, or whenever device behavior is in question.
 
 Consider delegating this whole pass to the `device-tester` subagent if you want it run without consuming much of your own context — it already knows the port-conflict gotchas below.
 
@@ -21,7 +21,7 @@ If the app is running, prefer the WiFi/HTTP checks below (they don't need the po
 ## 1. Diagnostics endpoint
 
 ```bash
-curl -s http://gaze-buddy.local/status.json
+curl -s http://beak-buddy.local/status.json
 ```
 
 Expect: valid JSON with `heap`, `rssi`, `uptimeMs`, `state`, `firmware`, `ssid`, `ntpSynced`, `time`. If `ntpSynced` is `true`, sanity-check `time` is a plausible current epoch (not near 0).
@@ -29,7 +29,7 @@ Expect: valid JSON with `heap`, `rssi`, `uptimeMs`, `state`, `firmware`, `ssid`,
 ## 2. Dashboard
 
 ```bash
-curl -s http://gaze-buddy.local/ | head -c 500
+curl -s http://beak-buddy.local/ | head -c 500
 ```
 
 Expect: HTML starting with `<!DOCTYPE html>`, containing the `/status.json`-polling script.
@@ -45,10 +45,10 @@ TOKEN=$(grep -oP "X-Gaze-Token: \K[a-f0-9]+" ~/.claude/settings.json)
 Test auth (each should be a single Bash call combining trigger + check, to avoid a concurrent Claude Code hook clobbering device state between separate tool calls):
 
 ```bash
-curl -s -o /dev/null -w "no token: %{http_code}\n" -X POST http://gaze-buddy.local/notify -d '{}'
-curl -s -o /dev/null -w "wrong token: %{http_code}\n" -X POST http://gaze-buddy.local/notify -H "X-Gaze-Token: wrong" -d '{}'
-curl -s -o /dev/null -X POST http://gaze-buddy.local/notify -H "X-Gaze-Token: $TOKEN" -d '{"title":"Test","message":"hi","color":2016,"durationMs":5000}'
-curl -s http://gaze-buddy.local/status.json
+curl -s -o /dev/null -w "no token: %{http_code}\n" -X POST http://beak-buddy.local/notify -d '{}'
+curl -s -o /dev/null -w "wrong token: %{http_code}\n" -X POST http://beak-buddy.local/notify -H "X-Gaze-Token: wrong" -d '{}'
+curl -s -o /dev/null -X POST http://beak-buddy.local/notify -H "X-Gaze-Token: $TOKEN" -d '{"title":"Test","message":"hi","color":2016,"durationMs":5000}'
+curl -s http://beak-buddy.local/status.json
 ```
 
 Expect: first two → `403`. Last curl's `status.json` check (same command block) → `"state":"notify"`. Wait ~6s and check again separately — should have reverted to `"idle"` (or whatever it was before) unless something else (like your own next tool call's hook) overwrote it first — that's expected interference, not a bug.

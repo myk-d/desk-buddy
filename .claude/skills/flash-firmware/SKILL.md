@@ -1,6 +1,6 @@
 ---
 name: flash-firmware
-description: Compile and redeploy Gaze Buddy firmware to the physical device. Use whenever a firmware change needs to reach the actual hardware.
+description: Compile and redeploy Beak Buddy firmware to the physical device. Use whenever a firmware change needs to reach the actual hardware.
 ---
 
 # Flash firmware to the device
@@ -19,7 +19,7 @@ This device's Linux USB-CDC driver doesn't support the DTR/RTS control-line togg
 
 ## 3. Actual flashing paths
 
-**Preferred — via the app**: open Gaze Buddy Hub, go to the Device page, click "Update Firmware." As of the OTA feature, this:
+**Preferred — via the app**: open Beak Buddy Hub, go to the Device page, click "Update Firmware." As of the OTA feature, this:
 - Tries OTA over WiFi first if the device has WiFi configured (`electron/flasher.ts`'s `otaFlash()` → the device's own `/update` endpoint) — no bootloader dance needed at all.
 - Falls back to USB via `electron/flasher.ts`'s `flashFirmware()`, which uses a **1200-baud-touch reset trick** (open the port at 1200 baud, then close it — triggers the Arduino ESP32 native-USB-CDC auto-reset into ROM download mode) instead of the DTR/RTS approach, then flashes via `esptool-js` with `no_reset` (since the device is already in bootloader mode).
 
@@ -32,7 +32,7 @@ Note: the app's "Update Firmware" button pulls from the **latest GitHub release*
 Confirm the new version landed:
 
 ```bash
-curl -s http://gaze-buddy.local/status.json | grep -o '"firmware":"[^"]*"'
+curl -s http://beak-buddy.local/status.json | grep -o '"firmware":"[^"]*"'
 ```
 
 Or watch for the `FIRMWARE:x.y.z` line on serial connect if testing over USB.

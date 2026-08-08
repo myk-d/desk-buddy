@@ -61,7 +61,7 @@ export function ScanningScreen() {
 			</div>
 
 			<div style={{ textAlign: 'center', animation: 'gb-fade-in 0.5s ease' }}>
-				<div style={{ fontSize: '26px', fontWeight: 'bold', marginBottom: '10px' }}>Searching for Gaze Buddy</div>
+				<div style={{ fontSize: '26px', fontWeight: 'bold', marginBottom: '10px' }}>Searching for Beak Buddy</div>
 				<div style={{ color: colors.textDisabled, fontSize: '15px', marginBottom: '8px' }}>
 					Scanning USB ports
 					<AnimatedDots />

@@ -1,6 +1,6 @@
 ---
 name: run-app
-description: Launch the Gaze Buddy Hub Electron desktop app in dev mode, and diagnose stale-build symptoms if it crashes with an error that doesn't match what the source actually says.
+description: Launch the Beak Buddy Hub Electron desktop app in dev mode, and diagnose stale-build symptoms if it crashes with an error that doesn't match what the source actually says.
 ---
 
 # Run the desktop app

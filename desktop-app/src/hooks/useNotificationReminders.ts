@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import dayjs from 'dayjs';
 import type { CalendarEvent, Task } from '../types';
 
-const NOTIFIED_KEY = 'gaze-buddy-notified-reminders';
+const NOTIFIED_KEY = 'beak-buddy-notified-reminders';
 const CHECK_INTERVAL_MS = 20_000;
 const FIRE_WINDOW_MINUTES = 5;
 // Tasks only carry a due *date*, not a time, so a fixed daily anchor stands in

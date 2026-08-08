@@ -25,7 +25,7 @@ export function SuccessScreen({ path }: { path: string }) {
 
 			<div style={{ textAlign: 'center' }}>
 				<div style={{ fontSize: '28px', fontWeight: 'bold', color: colors.success, marginBottom: '10px' }}>
-					Gaze Buddy Connected!
+					Beak Buddy Connected!
 				</div>
 				{path && (
 					<div style={{ color: colors.textFaint, fontSize: '13px', fontFamily: 'monospace', marginBottom: '8px' }}>

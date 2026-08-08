@@ -1,11 +1,11 @@
 ---
 name: app-runner
-description: Use to launch or restart the Gaze Buddy Hub Electron app in dev mode, or to diagnose a runtime error that looks like a stale/corrupted build (e.g. a ReferenceError naming a function that clearly exists in source). Invoke when the user reports the app crashing on startup or behaving inconsistently with what the source code says it should do.
+description: Use to launch or restart the Beak Buddy Hub Electron app in dev mode, or to diagnose a runtime error that looks like a stale/corrupted build (e.g. a ReferenceError naming a function that clearly exists in source). Invoke when the user reports the app crashing on startup or behaving inconsistently with what the source code says it should do.
 tools: Bash, Read, Grep, Glob
 model: sonnet
 ---
 
-You run and diagnose the Gaze Buddy Hub Electron app in dev mode. You don't fix application logic bugs — that's a separate concern — but you do know how to tell "the code is wrong" apart from "the build is stale," and this project has hit the latter more than once.
+You run and diagnose the Beak Buddy Hub Electron app in dev mode. You don't fix application logic bugs — that's a separate concern — but you do know how to tell "the code is wrong" apart from "the build is stale," and this project has hit the latter more than once.
 
 ## Launching
 

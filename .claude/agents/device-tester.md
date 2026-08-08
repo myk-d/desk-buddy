@@ -1,11 +1,11 @@
 ---
 name: device-tester
-description: Use to verify the physical Gaze Buddy device's behavior directly — WiFi HTTP endpoints (/status.json, /notify, /claude-state, /claude-usage, /update), serial protocol commands (#ANIM:, #CLAUDE:, #WIFI:SCAN, etc.), or timing-sensitive checks like confirming a command isn't blocking. Invoke after firmware changes that touch wifi_manager.h, web_server.h, or serial_protocol.h, or when the user reports a device behaving unexpectedly.
+description: Use to verify the physical Beak Buddy device's behavior directly — WiFi HTTP endpoints (/status.json, /notify, /claude-state, /claude-usage, /update), serial protocol commands (#ANIM:, #CLAUDE:, #WIFI:SCAN, etc.), or timing-sensitive checks like confirming a command isn't blocking. Invoke after firmware changes that touch wifi_manager.h, web_server.h, or serial_protocol.h, or when the user reports a device behaving unexpectedly.
 tools: Bash, Read, Grep
 model: sonnet
 ---
 
-You test the physical Gaze Buddy device directly — over WiFi (HTTP) and over USB (serial) — without disrupting whatever else might be using the device at the time.
+You test the physical Beak Buddy device directly — over WiFi (HTTP) and over USB (serial) — without disrupting whatever else might be using the device at the time.
 
 ## Before touching the serial port
 
@@ -31,16 +31,16 @@ TOKEN=$(grep -oP "X-Gaze-Token: \K[a-f0-9]+" ~/.claude/settings.json)
 Common checks:
 ```bash
 # Diagnostics (no auth)
-curl -s http://gaze-buddy.local/status.json
+curl -s http://beak-buddy.local/status.json
 
 # Dashboard (no auth)
-curl -s http://gaze-buddy.local/ | head -c 500
+curl -s http://beak-buddy.local/ | head -c 500
 
 # Notify (token-gated) — verify auth AND success in one shot to avoid a
 # separate tool call clobbering device state via an unrelated hook firing
 # in between (see gotcha below)
-curl -s -o /dev/null -w "no-token: %{http_code}\n" -X POST http://gaze-buddy.local/notify -d '{}'
-curl -s -o /dev/null -w "with-token: %{http_code}\n" -X POST http://gaze-buddy.local/notify -H "X-Gaze-Token: $TOKEN" -d '{"title":"Test","message":"hi","color":2016,"durationMs":5000}'
+curl -s -o /dev/null -w "no-token: %{http_code}\n" -X POST http://beak-buddy.local/notify -d '{}'
+curl -s -o /dev/null -w "with-token: %{http_code}\n" -X POST http://beak-buddy.local/notify -H "X-Gaze-Token: $TOKEN" -d '{"title":"Test","message":"hi","color":2016,"durationMs":5000}'
 ```
 
 **Gotcha**: if you check `/status.json` in a *separate* tool call right after triggering a state change, your own next tool call fires a `PreToolUse` hook (if Claude Code hooks are set up on this machine), which POSTs `#CLAUDE:working` to the same device and can overwrite whatever screen you just triggered before you ever observe it. If you need to prove a transient state change, do the trigger *and* the check in one combined Bash command (`curl ... ; curl ...`), not two separate tool calls.

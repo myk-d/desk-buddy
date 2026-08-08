@@ -1,6 +1,6 @@
-# Gaze Buddy Hub
+# Beak Buddy Hub
 
-Electron companion app for the [Gaze Buddy](../firmware) desktop gadget (ESP32-S3 + color TFT + NeoPixel). Auto-connects over USB, drives the device's screen from window activity / Claude Code / Pomodoro sessions, and doubles as a small local productivity hub (Tasks, Calendar, Pomodoro).
+Electron companion app for the [Beak Buddy](../firmware) desktop gadget (ESP32-S3 + color TFT + NeoPixel). Auto-connects over USB, drives the device's screen from window activity / Claude Code / Pomodoro sessions, and doubles as a small local productivity hub (Tasks, Calendar, Pomodoro).
 
 ## Features
 

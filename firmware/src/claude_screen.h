@@ -92,6 +92,10 @@ void drawClaudeScreen()
     stripColor = CLAUDE_WAITING_COLOR;
     label = "NEEDS INPUT";
     break;
+  case 4:
+    stripColor = CLAUDE_THINKING_COLOR;
+    label = "THINKING";
+    break;
   default:
     stripColor = CLAUDE_NEUTRAL_COLOR;
     label = "CLAUDE CODE";
@@ -200,6 +204,8 @@ void enterState(GazeState s)
       setNeo(74, 222, 128);
     else if (claudeSubState == 3)
       setNeo(255, 0, 0);
+    else if (claudeSubState == 4)
+      setNeo(168, 85, 247); // brand purple (#a855f7) — see pollClaudeActivityPulse for the breathing version
     else
       setNeo(120, 120, 120);
     break;
@@ -218,12 +224,68 @@ void applyClaudeState(int sub)
 {
   if (pomoLocked)
     return;
+
+  // Recorded even on a repeat "working" ping (see alreadyThere below) — this
+  // is exactly the signal pollClaudeActivityPulse() needs: how recently a
+  // tool call last fired, regardless of whether the screen itself changes.
+  if (sub == 1)
+    lastClaudeWorkingPingMs = millis();
+
+  // PreToolUse fires "working" on every single tool call, often several in
+  // quick succession — enterState() does a full fillScreen() + redraws both
+  // cards from scratch, so re-entering it when nothing actually changed was
+  // causing a visible full-screen flicker/clip on every tool call, not just
+  // on real state transitions.
+  GazeState target = (sub == 0) ? ST_IDLE : ST_CLAUDE;
+  bool alreadyThere = (sub == claudeSubState) && (currentState == target);
+
   claudeSubState = sub;
   claudeDoneAtMs = (sub == 2) ? millis() : 0;
-  if (sub == 0)
-    enterState(ST_IDLE);
+
+  if (alreadyThere)
+    return;
+
+  enterState(target);
+}
+
+// NeoPixel breathing while Claude is actively "working" or "thinking" — a
+// static solid color looked identical whether something was actually
+// happening or the screen was just sitting there. "Working" is rate-of-
+// change-aware (pulses faster/brighter right after a burst of tool calls,
+// settling into a slower rhythm once quiet for a few seconds); "thinking"
+// has no comparable per-call bursts to react to (UserPromptSubmit fires once
+// per turn, not repeatedly), so it just gets a calm steady breath instead.
+// Non-blocking, throttled to ~25fps since a breathing LED doesn't need — and
+// pixels.show() shouldn't be spammed at — full loop() speed.
+void pollClaudeActivityPulse()
+{
+  if (currentState != ST_CLAUDE || (claudeSubState != 1 && claudeSubState != 4))
+    return;
+
+  static unsigned long lastUpdateMs = 0;
+  unsigned long now = millis();
+  if (now - lastUpdateMs < 40)
+    return;
+  lastUpdateMs = now;
+
+  unsigned long periodMs;
+  uint8_t baseR, baseG, baseB;
+  if (claudeSubState == 1)
+  {
+    unsigned long sinceLastPing = now - lastClaudeWorkingPingMs;
+    periodMs = (sinceLastPing < 5000) ? 1200 : 3000;
+    baseR = 217; baseG = 119; baseB = 87; // Claude orange (#D97757)
+  }
   else
-    enterState(ST_CLAUDE);
+  {
+    periodMs = 2200;
+    baseR = 168; baseG = 85; baseB = 247; // brand purple (#a855f7)
+  }
+
+  float phase = (now % periodMs) / (float)periodMs;
+  float brightness = 0.55f + 0.45f * (0.5f - 0.5f * cosf(phase * 2.0f * PI));
+
+  setNeo((uint8_t)(baseR * brightness), (uint8_t)(baseG * brightness), (uint8_t)(baseB * brightness));
 }
 
 // Non-blocking — called every loop() iteration. Mirrors the desktop app's own
@@ -234,6 +296,13 @@ void pollClaudeDoneTimeout()
   if (claudeSubState == 2 && claudeDoneAtMs != 0 && millis() - claudeDoneAtMs > CLAUDE_DONE_DISPLAY_MS)
   {
     applyClaudeState(0);
+    // The app's own claudeCodeState may have been set via handleClaudeRelay()
+    // (hooks posting straight to this device over WiFi, bypassing the app's
+    // localhost:7842 relay entirely) — that path has no revert timer of its
+    // own, so without this the app would think Claude is still "done"
+    // forever, which blocks the window-focus tracker (it only runs once
+    // claudeCodeState is back to "idle").
+    Serial.println("CLAUDE_RELAY:idle");
   }
 }
 

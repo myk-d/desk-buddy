@@ -1,6 +1,6 @@
 ---
 name: add-wifi-endpoint
-description: Add a new HTTP route to the Gaze Buddy device's WiFi web server. Use when a new feature needs the device to receive or serve something over WiFi (a new POST action, a new GET status/page).
+description: Add a new HTTP route to the Beak Buddy device's WiFi web server. Use when a new feature needs the device to receive or serve something over WiFi (a new POST action, a new GET status/page).
 ---
 
 # Add a new WiFi HTTP endpoint
@@ -53,7 +53,7 @@ If the app might have a live USB connection and should stay in sync, `Serial.pri
 
 ## 5. App-side wiring, if the app needs to call this endpoint
 
-See the `add-ipc-channel` skill — same three-file IPC pattern (`main.ts`/`preload.ts`/`types.ts`), then an `http.request`/`https.request` call to `http://gaze-buddy.local/<path>` with the token from `wifiStore`.
+See the `add-ipc-channel` skill — same three-file IPC pattern (`main.ts`/`preload.ts`/`types.ts`), then an `http.request`/`https.request` call to `http://beak-buddy.local/<path>` with the token from `wifiStore`.
 
 ## 6. Verify
 

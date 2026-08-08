@@ -9,4 +9,4 @@ import "os";
 import "serialport";
 import "url";
 import "electron-updater";
-import "./main-g0HjM0Nx.js";
+import "./main-vuD49pso.js";

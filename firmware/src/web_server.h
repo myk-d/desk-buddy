@@ -73,6 +73,8 @@ void handleClaudeStateHttp()
     subCode = 2;
   else if (state == "waiting")
     subCode = 3;
+  else if (state == "thinking")
+    subCode = 4;
   if (subCode >= 0)
   {
     applyClaudeState(subCode);
@@ -151,7 +153,7 @@ void handleStatusJson()
 // /status.json client-side and re-renders every couple seconds.
 const char DASHBOARD_HTML[] PROGMEM = R"HTML(<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Gaze Buddy</title>
+<title>Beak Buddy</title>
 <style>
 body{font-family:-apple-system,sans-serif;background:#0c0a09;color:#e7e5e4;margin:0;padding:24px}
 h1{font-size:20px;margin:0 0 16px}
@@ -160,7 +162,7 @@ h1{font-size:20px;margin:0 0 16px}
 #err{color:#f87171;margin-top:16px}
 </style></head>
 <body>
-<h1>Gaze Buddy</h1>
+<h1>Beak Buddy</h1>
 <div id="rows"></div>
 <div id="err"></div>
 <script>

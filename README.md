@@ -1,4 +1,4 @@
-# Gaze Buddy
+# Beak Buddy
 
 A desktop gadget (ESP32-S3 + color TFT + NeoPixel) that reflects your workflow — what app you're focused on, whether Claude Code is working, Pomodoro sessions — as a face on a little screen next to your keyboard.
 
@@ -13,7 +13,7 @@ The desktop app auto-connects to the device over USB and sends it simple text co
 
 ```
 ┌─────────────────┐   USB serial    ┌──────────────────┐
-│  Gaze Buddy Hub  │ ◄─────────────► │  ESP32-S3 device │
+│  Beak Buddy Hub  │ ◄─────────────► │  ESP32-S3 device │
 │  (Electron app)  │                 │  (this firmware) │
 └─────────────────┘                 └──────────────────┘
                                        ▲

@@ -1,8 +1,8 @@
-# Project: Gaze Buddy Hub (Companion App)
+# Project: Beak Buddy Hub (Companion App)
 
 ## Overview
 
-**Gaze Buddy Hub** is the Electron companion app for the Gaze Buddy desktop gadget (`../firmware/`). It auto-connects to the device over USB, drives its screen based on window-tracking/Claude Code/Pomodoro activity, and has grown into a small local productivity hub (Tasks, Calendar, Pomodoro) alongside the hardware-control features. It also handles WiFi-provisioning the device so firmware updates and notifications keep working when the app itself is closed — Claude Code stats are the exception, see below.
+**Beak Buddy Hub** is the Electron companion app for the Beak Buddy desktop gadget (`../firmware/`). It auto-connects to the device over USB, drives its screen based on window-tracking/Claude Code/Pomodoro activity, and has grown into a small local productivity hub (Tasks, Calendar, Pomodoro) alongside the hardware-control features. It also handles WiFi-provisioning the device so firmware updates and notifications keep working when the app itself is closed — Claude Code stats are the exception, see below.
 
 ## Technology stack
 
@@ -33,13 +33,13 @@ See `../firmware/CLAUDE.md` for the authoritative, current command list (`#ANIM:
 
 ## Claude Code integration
 
-The Device page can show live working/done/waiting state and session/weekly usage bars, driven three different ways depending on what's available:
+The Device page can show live thinking/working/done/waiting state and session/weekly usage bars, driven three different ways depending on what's available:
 
-- **Hooks** (`PreToolUse`/`Stop`/`Notification`, written to `~/.claude/hooks/` by `setupClaudeHooks()` in `main.ts`) fire from *both* a terminal session and the VS Code extension — these drive the state indicator.
+- **Hooks** (`UserPromptSubmit`/`PreToolUse`/`Stop`/`Notification`, written to `~/.claude/hooks/` by `setupClaudeHooks()` in `main.ts`) fire from *both* a terminal session and the VS Code extension — these drive the state indicator. `UserPromptSubmit` covers the gap between "you asked" and the first tool call (or, for a pure-text reply with no tools, straight through to `Stop`) — without it the device just sat on whatever the previous turn left behind while Claude was composing a response.
 - **`statusLine`** (also hook-generated) only ever fires from a real terminal — it's the source of the live usage-percentage data, and carries `$CLAUDE_CODE_ENTRYPOINT` so the UI can show *which* front-end most recently fired.
 - **Account-usage API poll** (`pollClaudeUsageFromApi()`, every 6 min) — a fallback specifically for the VS Code-extension case, reading `~/.claude/.credentials.json`'s OAuth token and hitting Anthropic's own (undocumented) usage endpoint directly. App-process-only by design — it does not run on the device, so it stops updating once the app is closed.
 
-Hooks target either `localhost:7842` (this app's own relay server) or `gaze-buddy.local` directly (once WiFi is configured, with an `X-Gaze-Token` header) — `setupClaudeHooks()` regenerates them on every WiFi connect/forget so they always point at the right place. In principle a real terminal session's `statusLine` posting straight to the device should keep usage stats current even with the app closed, but in practice this hasn't been reliable — **the desktop app should be kept running for accurate Claude Code session/usage stats on the device**, regardless of WiFi setup. See `docs/claude-code-integration.md` for the user-facing version of this.
+Hooks target either `localhost:7842` (this app's own relay server) or `beak-buddy.local` directly (once WiFi is configured, with an `X-Gaze-Token` header) — `setupClaudeHooks()` regenerates them on every WiFi connect/forget so they always point at the right place. In principle a real terminal session's `statusLine` posting straight to the device should keep usage stats current even with the app closed, but in practice this hasn't been reliable — **the desktop app should be kept running for accurate Claude Code session/usage stats on the device**, regardless of WiFi setup. See `docs/claude-code-integration.md` for the user-facing version of this.
 
 ## WiFi provisioning
 

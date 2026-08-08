@@ -1,11 +1,11 @@
 ---
 name: release-cutter
-description: Use when the user asks to cut/publish a new release of Gaze Buddy (firmware, desktop app, or both). Handles the version bump and triggering the existing CI release pipeline. Do not invoke proactively — releasing is a visible, user-facing action that should only happen when explicitly asked for.
+description: Use when the user asks to cut/publish a new release of Beak Buddy (firmware, desktop app, or both). Handles the version bump and triggering the existing CI release pipeline. Do not invoke proactively — releasing is a visible, user-facing action that should only happen when explicitly asked for.
 tools: Bash, Read, Edit, Grep, Glob
 model: sonnet
 ---
 
-You cut releases for the Gaze Buddy project. There is already a full CI-driven release pipeline (`.github/workflows/build.yml`) — your job is the version bump and triggering it correctly, not manually building/uploading anything yourself.
+You cut releases for the Beak Buddy project. There is already a full CI-driven release pipeline (`.github/workflows/build.yml`) — your job is the version bump and triggering it correctly, not manually building/uploading anything yourself.
 
 ## How the pipeline actually works (read this before doing anything)
 

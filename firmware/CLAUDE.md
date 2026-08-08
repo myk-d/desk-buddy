@@ -1,8 +1,8 @@
-# Project: Gaze Buddy Firmware
+# Project: Beak Buddy Firmware
 
 ## Overview
 
-C++ firmware for the **Gaze Buddy** desktop gadget: an ESP32-S3 driving a 2.8" ILI9341 color TFT (the main face/eyes display) and an addressable NeoPixel for ambient color. It's controlled two ways at once:
+C++ firmware for the **Beak Buddy** desktop gadget: an ESP32-S3 driving a 2.8" ILI9341 color TFT (the main face/eyes display) and an addressable NeoPixel for ambient color. It's controlled two ways at once:
 
 - **USB serial** (115200 8N1) from the companion Electron app (`../desktop-app/`) — the primary control path.
 - **WiFi**, once configured — the device hosts its own HTTP server so OTA updates and ambient notifications keep working with the desktop app fully closed. Claude Code hooks *can* post here directly too, but in practice the desktop app should be kept running for accurate stats (see `../desktop-app/CLAUDE.md`).
@@ -16,7 +16,7 @@ Everything is `#pragma once` headers with inline function bodies, `#include`d di
 | File | Contents |
 |---|---|
 | `main.cpp` | Doc comment (protocol reference), includes in dependency order, `setup()`, `loop()` |
-| `display.h` | Pin/baud defines, `LGFX_GazeBuddy` (LovyanGFX driver class), `lcd`/`pixels` globals, color constants |
+| `display.h` | Pin/baud defines, `LGFX_BeakBuddy` (LovyanGFX driver class), `lcd`/`pixels` globals, color constants |
 | `anim_players.h` | `MonoCanvas` (legacy 1bpp renderer), `AnimPlayer` (legacy mono player), `ColorAnimPlayer` (RGB565 delta+RLE decoder — what's actually used for all current animations) |
 | `gaze_state.h` | `GazeState` enum, `currentState`/`activeIsColorPlayer`/`pomoLocked`, Claude/notify state globals |
 | `pomodoro_screen.h` | Full-screen Pomodoro timer display |
@@ -38,7 +38,7 @@ Packets are `#COMMAND:args\n`. Current commands:
 | `#ANIM:<name>` | `startup` / `idle` / `focus` / `relax` / `love` / `error` / `pomowork` / `pomobreak` / `pomolongbreak` |
 | `#R` | Software restart (`ESP.restart()`) |
 | `#VERSION` | Replies `FIRMWARE:<version>` |
-| `#CLAUDE:<sub>` | Claude Code full-screen status: `idle` / `working` / `done` / `waiting` |
+| `#CLAUDE:<sub>` | Claude Code full-screen status: `idle` / `thinking` / `working` / `done` / `waiting` |
 | `#USAGE:<5hPct>,<5hSecs>,<7dPct>,<7dSecs>` | Session/weekly usage bars (app precomputes the countdown — firmware has no RTC of its own until NTP syncs) |
 | `#TIME:<secondsLeft>:<total>` | Updates the Pomodoro timer/progress bar (only while in a Pomodoro state) |
 | `#WIFI:SCAN` | Async — replies `WIFI_NETWORKS:ssid,rssi;...` once the scan completes (non-blocking; `loop()` keeps ticking during the ~6-7s scan) |
@@ -50,7 +50,7 @@ Packets are `#COMMAND:args\n`. Current commands:
 
 ## WiFi HTTP server (once configured)
 
-Reachable at `http://gaze-buddy.local` (mDNS) once WiFi is set up via the desktop app (credentials are sent once over USB, never typed on the device). This is what lets OTA updates and `/notify` work with the app fully closed — Claude Code stats, however, are more reliable with the desktop app left running.
+Reachable at `http://beak-buddy.local` (mDNS) once WiFi is set up via the desktop app (credentials are sent once over USB, never typed on the device). This is what lets OTA updates and `/notify` work with the app fully closed — Claude Code stats, however, are more reliable with the desktop app left running.
 
 | Route | Auth | Purpose |
 |---|---|---|

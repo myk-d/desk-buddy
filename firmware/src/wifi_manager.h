@@ -118,7 +118,7 @@ void wifiPoll()
       wifiConnecting = false;
       if (!gazeServerStarted)
       {
-        if (MDNS.begin("gaze-buddy"))
+        if (MDNS.begin("beak-buddy"))
         {
           MDNS.addService("http", "tcp", 80);
         }

@@ -24,12 +24,14 @@ function pctColor(pct: number | null): string {
 
 const STATE_LABEL: Record<string, string> = {
 	idle: 'Idle',
+	thinking: 'Thinking…',
 	working: 'Working…',
 	done: 'Done',
 	waiting: 'Needs attention',
 };
 const STATE_COLOR: Record<string, string> = {
 	idle: '#a8a29e', // stone-400
+	thinking: '#0ea5e9', // sky-500 — distinct from "working" (brand purple) since both can now show at once
 	working: '#a855f7', // brand-500
 	done: '#4ade80', // green-400
 	waiting: '#f87171', // red-400
@@ -42,7 +44,7 @@ const SOURCE_LABEL: Record<string, string> = {
 	'claude-vscode': 'via VS Code extension',
 };
 
-export function DevicePage({ connected }: { connected: boolean }) {
+export function DevicePage({ connected, onReset }: { connected: boolean; onReset: () => void }) {
 	const [deviceVersion, setDeviceVersion] = useState<string | null>(null);
 	const [latest, setLatest] = useState<UpdateInfo>(null);
 	const [checking, setChecking] = useState(false);
@@ -210,7 +212,7 @@ export function DevicePage({ connected }: { connected: boolean }) {
 					<>
 						<p className="text-sm leading-relaxed text-stone-500">
 							Hooks are not configured on this machine. Click below to install them automatically —
-							Gaze Buddy will then react to Claude Code activity on this PC.
+							Beak Buddy will then react to Claude Code activity on this PC.
 						</p>
 						<button
 							onClick={setupHooks}
@@ -288,6 +290,28 @@ export function DevicePage({ connected }: { connected: boolean }) {
 				<WifiSetup />
 				<NotifyTester />
 			</div>
+
+			{/* ── Danger zone ── */}
+			<div>
+				<h2 className="text-xl font-bold text-stone-900">Reset</h2>
+				<p className="mb-4 mt-1 text-sm text-stone-500">
+					Restarts the device's firmware. Doesn't affect saved WiFi credentials or firmware version.
+				</p>
+			</div>
+
+			<div className="flex w-full max-w-130 min-w-0 flex-col rounded-2xl border border-stone-200 bg-white p-7">
+				<button
+					disabled={!connected}
+					onClick={onReset}
+					className={`self-start rounded-lg border p-2.5 text-[13px] font-semibold transition disabled:cursor-not-allowed ${
+						connected
+							? 'cursor-pointer border-red-200 bg-red-50 text-red-600 hover:brightness-95'
+							: 'border-stone-200 bg-transparent text-stone-300'
+					}`}
+				>
+					RESET DEVICE
+				</button>
+			</div>
 		</div>
 	);
 }
@@ -310,7 +334,7 @@ function NotifyTester() {
 		setSending(true);
 		setResult(null);
 		try {
-			await window.api.wifi.sendNotify('Test', 'Hello from Gaze Buddy Hub!');
+			await window.api.wifi.sendNotify('Test', 'Hello from Beak Buddy Hub!');
 			setResult('ok');
 		} catch {
 			setResult('error');

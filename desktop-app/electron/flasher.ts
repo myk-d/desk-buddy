@@ -128,7 +128,7 @@ export async function flashFirmware(
 // needs). Must be sent as multipart/form-data — the firmware's WebServer
 // upload callback is the only path there that streams the body incrementally
 // without buffering the whole multi-hundred-KB image into RAM first.
-const OTA_BOUNDARY = '----GazeBuddyOTABoundary7f3a9c2e';
+const OTA_BOUNDARY = '----BeakBuddyOTABoundary7f3a9c2e';
 
 export async function otaFlash(
 	host: string,

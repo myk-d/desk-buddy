@@ -1,5 +1,5 @@
 {
-	"name": "gaze-buddy-hub",
+	"name": "beak-buddy-hub",
 	"private": true,
 	"version": "0.3.1",
 	"type": "module",
@@ -51,8 +51,9 @@
 	},
 	"main": "dist-electron/main.js",
 	"build": {
-		"appId": "com.gazebuddy.hub",
-		"productName": "Gaze Buddy Hub",
+		"appId": "com.beakbuddy.hub",
+		"productName": "Beak Buddy Hub",
+		"icon": "build/icon.png",
 		"files": [
 			"dist/**/*",
 			"dist-electron/**/*"

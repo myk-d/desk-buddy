@@ -12,13 +12,13 @@
 // LovyanGFX — ILI9341 320×240 SPI
 // ═════════════════════════════════════════════════════════════════════════════
 
-class LGFX_GazeBuddy : public lgfx::LGFX_Device
+class LGFX_BeakBuddy : public lgfx::LGFX_Device
 {
   lgfx::Panel_ILI9341 _panel;
   lgfx::Bus_SPI _bus;
 
 public:
-  LGFX_GazeBuddy()
+  LGFX_BeakBuddy()
   {
     auto b = _bus.config();
     b.spi_host = SPI2_HOST;
@@ -46,7 +46,7 @@ public:
   }
 };
 
-LGFX_GazeBuddy lcd;
+LGFX_BeakBuddy lcd;
 Adafruit_NeoPixel pixels(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 
 // ── 128×64 "віртуальний" канвас — масштабується на справжній екран ─────────
@@ -69,6 +69,7 @@ const int OLED_DRAW_Y = (240 - OLED_DRAW_H) / 2;
 #define CLAUDE_WORKING_COLOR 0xD3AB  // Claude orange (#D97757)
 #define CLAUDE_DONE_COLOR 0x4EF0     // той самий зелений, що й pomo break
 #define CLAUDE_WAITING_COLOR 0xF800  // яскраво-червоний
+#define CLAUDE_THINKING_COLOR 0xAABE // фіолетовий (той самий брендовий #a855f7, що й у застосунку) — між UserPromptSubmit і першим tool-call
 #define CLAUDE_NEUTRAL_COLOR 0x39C7  // сірий — заглушка, поки немає sub-стану
 #define CLAUDE_BG_DARK 0x0862        // майже чорний фон екрану
 #define CLAUDE_CARD_BG 0x18C4        // фон картки статистики
