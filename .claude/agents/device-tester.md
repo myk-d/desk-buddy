@@ -25,7 +25,7 @@ fuser /dev/ttyACM0 2>&1 || echo "port free"
 The device's token lives in the currently-installed Claude Code hook scripts:
 
 ```
-TOKEN=$(grep -oP "X-Gaze-Token: \K[a-f0-9]+" ~/.claude/settings.json)
+TOKEN=$(grep -oP "X-Beak-Token: \K[a-f0-9]+" ~/.claude/settings.json)
 ```
 
 Common checks:
@@ -40,7 +40,7 @@ curl -s http://beak-buddy.local/ | head -c 500
 # separate tool call clobbering device state via an unrelated hook firing
 # in between (see gotcha below)
 curl -s -o /dev/null -w "no-token: %{http_code}\n" -X POST http://beak-buddy.local/notify -d '{}'
-curl -s -o /dev/null -w "with-token: %{http_code}\n" -X POST http://beak-buddy.local/notify -H "X-Gaze-Token: $TOKEN" -d '{"title":"Test","message":"hi","color":2016,"durationMs":5000}'
+curl -s -o /dev/null -w "with-token: %{http_code}\n" -X POST http://beak-buddy.local/notify -H "X-Beak-Token: $TOKEN" -d '{"title":"Test","message":"hi","color":2016,"durationMs":5000}'
 ```
 
 **Gotcha**: if you check `/status.json` in a *separate* tool call right after triggering a state change, your own next tool call fires a `PreToolUse` hook (if Claude Code hooks are set up on this machine), which POSTs `#CLAUDE:working` to the same device and can overwrite whatever screen you just triggered before you ever observe it. If you need to prove a transient state change, do the trigger *and* the check in one combined Bash command (`curl ... ; curl ...`), not two separate tool calls.

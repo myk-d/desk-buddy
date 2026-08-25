@@ -55,6 +55,8 @@ export function DevicePage({ connected, onReset }: { connected: boolean; onReset
 
 	const [hooksSetup, setHooksSetup] = useState<boolean | null>(null);
 	const [settingUp, setSettingUp] = useState(false);
+	const [testing, setTesting] = useState(false);
+	const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 	const [claudeState, setClaudeState] = useState('idle');
 	const [claudeSource, setClaudeSource] = useState<string | null>(null);
 	const [claudeUsage, setClaudeUsage] = useState<ClaudeUsage>({
@@ -108,6 +110,14 @@ export function DevicePage({ connected, onReset }: { connected: boolean; onReset
 		await window.api.claude.setup();
 		setHooksSetup(true);
 		setSettingUp(false);
+	}
+
+	async function runIntegrationTest() {
+		setTesting(true);
+		setTestResult(null);
+		const result = await window.api.claude.testIntegration();
+		setTestResult(result);
+		setTesting(false);
 	}
 
 	async function startFlash() {
@@ -271,6 +281,23 @@ export function DevicePage({ connected, onReset }: { connected: boolean; onReset
 								this way.)
 							</p>
 						)}
+
+						<div className="flex flex-col gap-2 border-t border-stone-100 pt-4">
+							<div className="flex items-center gap-3">
+								<button
+									onClick={runIntegrationTest}
+									disabled={testing}
+									className="cursor-pointer self-start rounded-full border border-stone-200 px-4 py-1.5 text-sm text-stone-600 hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50"
+								>
+									{testing ? 'Testing…' : 'Test Claude Code integration'}
+								</button>
+							</div>
+							{testResult && (
+								<span className={`text-xs ${testResult.ok ? 'text-emerald-600' : 'text-red-600'}`}>
+									{testResult.message}
+								</span>
+							)}
+						</div>
 					</>
 				) : (
 					<p className="text-sm text-stone-500">Checking…</p>

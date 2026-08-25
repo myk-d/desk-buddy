@@ -5,7 +5,7 @@
  * Source      : 45 PNG frames (128×64)
  * Crop region : x=24, y=10, w=80, h=40
  * Target FPS  : 15
- * Freeze      : вимкнена
+ * Freeze      : disabled
  * Compression : 281.3 KB → 25.1 KB (91.1% reduction)
  * Frames      : 45 total | 1 keyframe | 21 delta | 23 skipped
  *
@@ -21,7 +21,7 @@
  *     ANGRY_ANIM_frames, ANGRY_ANIM_sizes, ANGRY_ANIM_types,
  *     ANGRY_ANIM_FRAME_COUNT, ANGRY_ANIM_FPS,
  *     ANGRY_ANIM_CROP_X, ANGRY_ANIM_CROP_Y, ANGRY_ANIM_CROP_W, ANGRY_ANIM_CROP_H,
- *     true  // loop: true = зациклити, false = one-shot
+ *     true  // loop: true = loop, false = one-shot
  *   );
  */
 

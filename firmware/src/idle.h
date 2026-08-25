@@ -5,7 +5,7 @@
  * Source      : 100 PNG frames (128×64)
  * Crop region : x=7, y=15, w=117, h=35
  * Target FPS  : 15
- * Freeze      : вимкнена
+ * Freeze      : disabled
  * Compression : 799.8 KB → 21.5 KB (97.3% reduction)
  * Frames      : 100 total | 1 keyframe | 48 delta | 51 skipped
  *
@@ -21,7 +21,7 @@
  *     IDLE_ANIM_frames, IDLE_ANIM_sizes, IDLE_ANIM_types,
  *     IDLE_ANIM_FRAME_COUNT, IDLE_ANIM_FPS,
  *     IDLE_ANIM_CROP_X, IDLE_ANIM_CROP_Y, IDLE_ANIM_CROP_W, IDLE_ANIM_CROP_H,
- *     true  // loop: true = зациклити, false = one-shot
+ *     true  // loop: true = loop, false = one-shot
  *   );
  */
 

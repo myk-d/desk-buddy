@@ -5,7 +5,7 @@
  * Source      : 131 PNG frames (128×64)
  * Crop region : x=24, y=0, w=80, h=50
  * Target FPS  : 15
- * Freeze      : вимкнена
+ * Freeze      : disabled
  * Compression : 1023.4 KB → 50.2 KB (95.1% reduction)
  * Frames      : 131 total | 1 keyframe | 122 delta | 8 skipped
  *
@@ -21,7 +21,7 @@
  *     WORK_ANIM_frames, WORK_ANIM_sizes, WORK_ANIM_types,
  *     WORK_ANIM_FRAME_COUNT, WORK_ANIM_FPS,
  *     WORK_ANIM_CROP_X, WORK_ANIM_CROP_Y, WORK_ANIM_CROP_W, WORK_ANIM_CROP_H,
- *     true  // loop: true = зациклити, false = one-shot
+ *     true  // loop: true = loop, false = one-shot
  *   );
  */
 

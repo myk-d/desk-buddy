@@ -9,7 +9,7 @@ The recipe used for `/claude-state`, `/claude-usage`, `/notify`, `/status.json`,
 
 ## 1. Decide: token-gated or open?
 
-- **State-changing** (anything that makes the device do something): token-gated. Check `checkGazeToken()` at the top of the handler, `gazeServer.send(403, "text/plain", "forbidden")` and `return` if it fails.
+- **State-changing** (anything that makes the device do something): token-gated. Check `checkBeakToken()` at the top of the handler, `beakServer.send(403, "text/plain", "forbidden")` and `return` if it fails.
 - **Read-only, low-sensitivity** (status/diagnostics/dashboard): no auth needed, matching the existing `/status.json` and `/` precedent — but flag this choice explicitly to the user if it's ambiguous, don't assume silently.
 
 ## 2. Write the handler in `web_server.h`
@@ -17,19 +17,19 @@ The recipe used for `/claude-state`, `/claude-usage`, `/notify`, `/status.json`,
 ```cpp
 void handleSomethingHttp()
 {
-  if (!checkGazeToken())  // omit if intentionally unauthenticated
+  if (!checkBeakToken())  // omit if intentionally unauthenticated
   {
-    gazeServer.send(403, "text/plain", "forbidden");
+    beakServer.send(403, "text/plain", "forbidden");
     return;
   }
-  String body = gazeServer.arg("plain");
+  String body = beakServer.arg("plain");
   // Extract fields with the existing helpers — no ArduinoJson dependency:
   String someField = jsonExtractString(body, "someField");
   float someNumber = jsonExtractNumber(body, "someNumber", /* fallback */ 0);
 
   // ... do the thing, e.g. call into a *_screen.h's applyX() function ...
 
-  gazeServer.send(200, "text/plain", "ok");
+  beakServer.send(200, "text/plain", "ok");
 }
 ```
 
@@ -42,10 +42,10 @@ For a large binary body (file upload, e.g. OTA), a plain POST gets fully buffere
 In `webServerBegin()` (same file):
 
 ```cpp
-gazeServer.on("/something", HTTP_POST, handleSomethingHttp);
+beakServer.on("/something", HTTP_POST, handleSomethingHttp);
 ```
 
-If it needs a header beyond `X-Gaze-Token`, add it to the `collectHeaders()` call in the same function — **headers are invisible to `WebServer` unless explicitly collected**, a real gotcha that caused a silent-403-with-correct-token bug before.
+If it needs a header beyond `X-Beak-Token`, add it to the `collectHeaders()` call in the same function — **headers are invisible to `WebServer` unless explicitly collected**, a real gotcha that caused a silent-403-with-correct-token bug before.
 
 ## 4. If relaying state back over serial (optional)
 

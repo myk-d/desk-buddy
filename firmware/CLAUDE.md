@@ -54,14 +54,14 @@ Reachable at `http://beak-buddy.local` (mDNS) once WiFi is set up via the deskto
 
 | Route | Auth | Purpose |
 |---|---|---|
-| `POST /claude-state` | `X-Gaze-Token` | Same as `#CLAUDE:` over serial |
-| `POST /claude-usage` | `X-Gaze-Token` | Same as `#USAGE:` over serial |
-| `POST /notify` | `X-Gaze-Token` | Generic ambient-status notification: `{title, message, color, durationMs}` — not tied to Claude Code, auto-reverts to idle |
-| `POST /update` | `X-Gaze-Token` | OTA firmware flash (multipart upload, standard ESP32 `Update.h` two-slot ping-pong — sidesteps USB entirely) |
+| `POST /claude-state` | `X-Beak-Token` | Same as `#CLAUDE:` over serial |
+| `POST /claude-usage` | `X-Beak-Token` | Same as `#USAGE:` over serial |
+| `POST /notify` | `X-Beak-Token` | Generic ambient-status notification: `{title, message, color, durationMs}` — not tied to Claude Code, auto-reverts to idle |
+| `POST /update` | `X-Beak-Token` | OTA firmware flash (multipart upload, standard ESP32 `Update.h` two-slot ping-pong — sidesteps USB entirely) |
 | `GET /status.json` | none | Diagnostics: heap, RSSI, uptime, current state, firmware version, WiFi SSID, NTP sync status/time |
 | `GET /` | none | Small human-readable dashboard, polls `/status.json` client-side |
 
-Read-only/low-sensitivity routes are intentionally unauthenticated (LAN-only, matching common IoT status-page convention); anything that changes device state requires the token. Custom headers (`X-Gaze-Token`) must be explicitly registered via `gazeServer.collectHeaders()` — `WebServer` silently returns `""` for any header not on that list, a bug hit once already.
+Read-only/low-sensitivity routes are intentionally unauthenticated (LAN-only, matching common IoT status-page convention); anything that changes device state requires the token. Custom headers (`X-Beak-Token`) must be explicitly registered via `beakServer.collectHeaders()` — `WebServer` silently returns `""` for any header not on that list, a bug hit once already.
 
 State-changing HTTP handlers relay back over USB serial (`CLAUDE_RELAY:`, `USAGE_RELAY:`) when connected, so the desktop app's own UI stays in sync even when the update arrived via WiFi and bypassed the app entirely.
 

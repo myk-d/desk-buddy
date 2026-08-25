@@ -5,7 +5,7 @@
  * Source      : 66 PNG frames (128×64)
  * Crop region : x=24, y=15, w=80, h=36
  * Target FPS  : 15
- * Freeze      : вимкнена
+ * Freeze      : disabled
  * Compression : 371.3 KB → 29.6 KB (92.0% reduction)
  * Frames      : 66 total | 1 keyframe | 65 delta | 0 skipped
  *
@@ -21,7 +21,7 @@
  *     LOVE_ANIM_frames, LOVE_ANIM_sizes, LOVE_ANIM_types,
  *     LOVE_ANIM_FRAME_COUNT, LOVE_ANIM_FPS,
  *     LOVE_ANIM_CROP_X, LOVE_ANIM_CROP_Y, LOVE_ANIM_CROP_W, LOVE_ANIM_CROP_H,
- *     true  // loop: true = зациклити, false = one-shot
+ *     true  // loop: true = loop, false = one-shot
  *   );
  */
 

@@ -1,12 +1,12 @@
 #pragma once
 
 // ═════════════════════════════════════════════════════════════════════════════
-// [НОВЕ] WiFi — підключення/сканування/NVS-креденшели/mDNS. Опціонально, лише
-// якщо користувач підключив мережу через desktop-застосунок (креденшели
-// ніколи не вводяться на самому пристрої). Дозволяє hook-скриптам Claude
-// Code оновлювати екран напряму, навіть коли застосунок закритий.
+// WiFi — connect/scan/NVS credentials/mDNS. Optional, only if the user
+// connected the network via the desktop app (credentials are never typed on
+// the device itself). Lets Claude Code's hook scripts update the screen
+// directly, even when the app is closed.
 //
-// HTTP-маршрути й обробники — див. web_server.h.
+// HTTP routes and handlers — see web_server.h.
 // ═════════════════════════════════════════════════════════════════════════════
 
 #include <WiFi.h>
@@ -25,7 +25,12 @@ Preferences wifiPrefs;
 bool wifiConnecting = false;
 unsigned long wifiConnectStartMs = 0;
 const unsigned long WIFI_CONNECT_TIMEOUT_MS = 15000;
-bool gazeServerStarted = false;
+bool beakServerStarted = false;
+// Nothing here ever retried a dropped connection after the initial connect —
+// a router reboot or a signal blip meant the device silently stayed offline
+// until manually power-cycled.
+unsigned long lastReconnectAttemptMs = 0;
+const unsigned long WIFI_RECONNECT_RETRY_MS = 10000; // no more than once per 10s
 
 // Non-blocking scan — WiFi.scanNetworks() (blocking overload) took ~6-7s
 // measured on this hardware, freezing the entire loop() for that whole
@@ -80,14 +85,14 @@ void wifiForget()
   wifiPrefs.begin("wifi", false);
   wifiPrefs.clear();
   wifiPrefs.end();
-  gazeToken = "";
+  beakToken = "";
   WiFi.disconnect(true);
 }
 
 void wifiBeginConnect(const String &ssid, const String &password, const String &token)
 {
   wifiSaveCredentials(ssid, password, token);
-  gazeToken = token;
+  beakToken = token;
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid.c_str(), password.c_str());
   wifiConnecting = true;
@@ -100,15 +105,15 @@ void wifiTryAutoConnect()
   wifiLoadCredentials(ssid, password, token);
   if (ssid.length() == 0)
     return;
-  gazeToken = token;
+  beakToken = token;
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid.c_str(), password.c_str());
   wifiConnecting = true;
   wifiConnectStartMs = millis();
 }
 
-// Викликається щоразу з loop() — неблокуюче. Повідомляє про зміну стану
-// підключення через Serial один раз (не щоразу), коли воно стається.
+// Called every loop() iteration — non-blocking. Reports a connection state
+// change over Serial once (not every call), when it actually happens.
 void wifiPoll()
 {
   if (wifiConnecting)
@@ -116,7 +121,7 @@ void wifiPoll()
     if (WiFi.status() == WL_CONNECTED)
     {
       wifiConnecting = false;
-      if (!gazeServerStarted)
+      if (!beakServerStarted)
       {
         if (MDNS.begin("beak-buddy"))
         {
@@ -124,7 +129,7 @@ void wifiPoll()
         }
         configTime(0, 0, "pool.ntp.org"); // async — see ntpSynced()
         webServerBegin();
-        gazeServerStarted = true;
+        beakServerStarted = true;
       }
       Serial.print("WIFI_STATUS:connected,");
       Serial.println(WiFi.localIP().toString());
@@ -136,9 +141,17 @@ void wifiPoll()
     }
   }
 
-  if (gazeServerStarted && WiFi.status() == WL_CONNECTED)
+  if (beakServerStarted)
   {
-    gazeServer.handleClient();
+    if (WiFi.status() == WL_CONNECTED)
+    {
+      beakServer.handleClient();
+    }
+    else if (millis() - lastReconnectAttemptMs > WIFI_RECONNECT_RETRY_MS)
+    {
+      lastReconnectAttemptMs = millis();
+      WiFi.reconnect();
+    }
   }
 
   if (wifiScanPending)

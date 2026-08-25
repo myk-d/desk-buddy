@@ -154,7 +154,7 @@ export async function otaFlash(
 				path: '/update',
 				method: 'POST',
 				headers: {
-					'X-Gaze-Token': token,
+					'X-Beak-Token': token,
 					'Content-Type': `multipart/form-data; boundary=${OTA_BOUNDARY}`,
 					'Content-Length': totalLength,
 				},

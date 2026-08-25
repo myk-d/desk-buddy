@@ -1,29 +1,28 @@
 #pragma once
 
-// [НОВЕ] Generic ambient-status screen (/notify) — той самий візуальний
-// підхід, що й Claude Code екран (кольорова смужка + повідомлення), але не
-// прив'язаний до жодної конкретної інтеграції. Автоматично повертається в
-// idle через notifyDurationMs — той самий підхід, що й pollClaudeDoneTimeout().
+// Generic ambient-status screen (/notify) — the same visual approach as the
+// Claude Code screen (colored strip + message), but not tied to any specific
+// integration. Auto-reverts to idle after notifyDurationMs — same pattern as
+// pollClaudeDoneTimeout().
 
-#define NOTIFY_BG_DARK 0x0862 // той самий колір, що й CLAUDE_BG_DARK
+#define NOTIFY_BG_DARK 0x0862 // same color as CLAUDE_BG_DARK
 
 void drawNotifyScreen()
 {
   lcd.fillScreen(NOTIFY_BG_DARK);
   lcd.fillRect(0, 0, 320, 30, notifyColor);
   lcd.setTextSize(1);
-  lcd.setTextColor(0x0000, notifyColor); // чорний текст — читається на будь-якому яскравому кольорі смужки
+  lcd.setTextColor(0x0000, notifyColor); // black text — readable against any bright strip color
   lcd.setCursor(10, 11);
   lcd.print(notifyTitle);
 
-  // Просте перенесення рядків по словах — повідомлення можуть бути довшими
-  // за один рядок (майбутні нагадування з Task/Calendar), а Adafruit_GFX
-  // сам по собі рядки не переносить.
+  // Simple word-wrap — messages can be longer than one line (future
+  // reminders from Task/Calendar), and Adafruit_GFX doesn't wrap on its own.
   lcd.setTextSize(2);
   lcd.setTextColor(0xFFFF, NOTIFY_BG_DARK);
   const int marginX = 14;
   const int maxWidth = 320 - marginX * 2;
-  const int charW = 6 * 2; // базова ширина символу (6px) * textSize
+  const int charW = 6 * 2; // base character width (6px) * textSize
   const int maxCharsPerLine = maxWidth / charW;
 
   int y = 50;

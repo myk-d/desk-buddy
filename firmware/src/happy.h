@@ -5,7 +5,7 @@
  * Source      : 66 PNG frames (128×64)
  * Crop region : x=24, y=10, w=80, h=40
  * Target FPS  : 15
- * Freeze      : вимкнена
+ * Freeze      : disabled
  * Compression : 412.5 KB → 33.0 KB (92.0% reduction)
  * Frames      : 66 total | 1 keyframe | 65 delta | 0 skipped
  *
@@ -21,7 +21,7 @@
  *     HAPPY_ANIM_frames, HAPPY_ANIM_sizes, HAPPY_ANIM_types,
  *     HAPPY_ANIM_FRAME_COUNT, HAPPY_ANIM_FPS,
  *     HAPPY_ANIM_CROP_X, HAPPY_ANIM_CROP_Y, HAPPY_ANIM_CROP_W, HAPPY_ANIM_CROP_H,
- *     true  // loop: true = зациклити, false = one-shot
+ *     true  // loop: true = loop, false = one-shot
  *   );
  */
 

@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('api', {
 	claude: {
 		isSetup: () => ipcRenderer.invoke('claude:isSetup'),
 		setup: () => ipcRenderer.invoke('claude:setup'),
+		testIntegration: () => ipcRenderer.invoke('claude:testIntegration'),
 		getUsage: () => ipcRenderer.invoke('claude:getUsage'),
 		getSource: () => ipcRenderer.invoke('claude:getSource'),
 		onState: (cb: (state: string) => void) => ipcRenderer.on('claude:state', (_, s) => cb(s)),

@@ -134,23 +134,33 @@ function currentHookTarget(): HookTarget {
 // this state hook firing fine from either front-end.
 const IS_WINDOWS = process.platform === 'win32';
 
+// Not validated anywhere yet — cheap insurance for later, not full schema
+// versioning (app and firmware ship from the same repo/release, so there's
+// no real compatibility risk today). Bump this if a wire-format change ever
+// needs the two sides to tell each other apart.
+const WIFI_PROTOCOL_VERSION = 1;
+
 function buildStateHookCommand(target: HookTarget, state: string): string {
+	// Overwrites (not appends) so it never grows unbounded — this was a
+	// temporary diagnostic to confirm curl-direct delivery actually fixed
+	// Windows hook execution (it did), kept around at effectively-zero
+	// ongoing cost since it's genuinely useful if a future platform issue
+	// ever needs the same kind of triage again.
 	const logPath = join(CLAUDE_HOOKS_DIR, 'hook.log');
 	if (IS_WINDOWS) {
-		const tokenHeader = target.token ? ` -H "X-Gaze-Token: ${target.token}"` : '';
+		const tokenHeader = target.token ? ` -H "X-Beak-Token: ${target.token}"` : '';
 		// `-S` keeps error text despite `-s` (silent normally swallows both).
-		// Logging stays temporary, to confirm this actually fixes delivery.
-		return `curl -sS -f -X POST http://${target.host}:${target.port}/claude-state -H "Content-Type: application/json"${tokenHeader} -d "{\\"state\\":\\"${state}\\",\\"source\\":\\"%CLAUDE_CODE_ENTRYPOINT%\\"}" >>"${logPath}" 2>&1`;
+		return `curl -sS -f -X POST http://${target.host}:${target.port}/claude-state -H "Content-Type: application/json"${tokenHeader} -d "{\\"v\\":${WIFI_PROTOCOL_VERSION},\\"state\\":\\"${state}\\",\\"source\\":\\"%CLAUDE_CODE_ENTRYPOINT%\\"}" >"${logPath}" 2>&1`;
 	}
-	const tokenHeader = target.token ? ` -H 'X-Gaze-Token: ${target.token}'` : '';
-	return `curl -sS -f -X POST http://${target.host}:${target.port}/claude-state -H 'Content-Type: application/json'${tokenHeader} -d "{\\"state\\":\\"${state}\\",\\"source\\":\\"\${CLAUDE_CODE_ENTRYPOINT:-unknown}\\"}" >>"${logPath}" 2>&1 || true`;
+	const tokenHeader = target.token ? ` -H 'X-Beak-Token: ${target.token}'` : '';
+	return `curl -sS -f -X POST http://${target.host}:${target.port}/claude-state -H 'Content-Type: application/json'${tokenHeader} -d "{\\"v\\":${WIFI_PROTOCOL_VERSION},\\"state\\":\\"${state}\\",\\"source\\":\\"\${CLAUDE_CODE_ENTRYPOINT:-unknown}\\"}" >"${logPath}" 2>&1 || true`;
 }
 
 // Fed the real rate_limits (five_hour/seven_day used_percentage + resetsAt) by
 // Claude Code on every statusLine render; POSTs them to the target server and
 // still prints a normal status line so the terminal UI keeps working.
 function buildStatuslineHook(target: HookTarget): string {
-	const tokenHeader = target.token ? `'X-Gaze-Token': '${target.token}', ` : '';
+	const tokenHeader = target.token ? `'X-Beak-Token': '${target.token}', ` : '';
 	return `#!/usr/bin/env node
 'use strict';
 const http = require('http');
@@ -180,6 +190,7 @@ process.stdin.on('end', () => {
         const now = Math.floor(Date.now() / 1000);
         const secsLeft = (resetsAt) => (typeof resetsAt === 'number' ? Math.max(0, Math.round(resetsAt - now)) : null);
         const payload = JSON.stringify({
+            v: ${WIFI_PROTOCOL_VERSION},
             hasData: true,
             fiveHourPct: fiveHour?.used_percentage ?? null,
             fiveHourResetsAt: fiveHour?.resets_at ?? null,
@@ -428,6 +439,7 @@ function handleClaudeUsage(usage: Partial<ClaudeUsage>) {
 	const wifi = wifiStore?.get() ?? DEFAULT_WIFI_CONFIG;
 	if (wifi.configured && wifi.token) {
 		const payload = JSON.stringify({
+			v: WIFI_PROTOCOL_VERSION,
 			fiveHourPct: Math.round(claudeUsage.fiveHourPct),
 			fiveHourSecsLeft,
 			sevenDayPct: Math.round(claudeUsage.sevenDayPct),
@@ -435,7 +447,7 @@ function handleClaudeUsage(usage: Partial<ClaudeUsage>) {
 		});
 		const req = http.request({
 			hostname: 'beak-buddy.local', port: 80, path: '/claude-usage', method: 'POST',
-			headers: { 'X-Gaze-Token': wifi.token, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+			headers: { 'X-Beak-Token': wifi.token, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
 		}, (res) => res.resume());
 		req.on('error', () => {});
 		req.setTimeout(3000, () => req.destroy());
@@ -457,6 +469,38 @@ function handleClaudeRelay(state: string) {
 	claudeCodeState = state;
 	mainWindow?.webContents.send('claude:state', state);
 }
+
+// Self-heal for state drift: claudeCodeState is set from one-shot relay
+// messages (handleClaudeRelay above) when hooks post straight to the device
+// over WiFi, bypassing this app entirely — if one of those messages is ever
+// dropped (a momentary WiFi hiccup, a USB reconnect race), claudeCodeState
+// gets stuck non-idle forever, silently blocking the window-focus tracker
+// (it refuses to run unless claudeCodeState === 'idle') until the app is
+// restarted. Periodically cross-checking the device's own authoritative
+// /status.json catches that instead of relying solely on relay messages
+// never being lost.
+function pollClaudeStateReconciliation(): void {
+	const wifi = wifiStore?.get() ?? DEFAULT_WIFI_CONFIG;
+	if (!wifi.configured || claudeCodeState === 'idle') return;
+
+	const req = http.get({ hostname: 'beak-buddy.local', port: 80, path: '/status.json', timeout: 3000 }, (res) => {
+		let body = '';
+		res.on('data', (c: string) => { body += c; });
+		res.on('end', () => {
+			try {
+				const d = JSON.parse(body);
+				if (d.state !== 'claude' && claudeCodeState !== 'idle') {
+					claudeCodeState = 'idle';
+					lastCategory = null;
+					mainWindow?.webContents.send('claude:state', 'idle');
+				}
+			} catch {}
+		});
+	});
+	req.on('error', () => {});
+	req.on('timeout', () => req.destroy());
+}
+setInterval(pollClaudeStateReconciliation, 20_000);
 
 function handleClaudeUsageRelay(fiveHourPct: number, fiveHourSecsLeft: number, sevenDayPct: number, sevenDaySecsLeft: number) {
 	const now = Math.round(Date.now() / 1000);
@@ -870,11 +914,11 @@ function registerWifiIpc() {
 		return new Promise<void>((resolve, reject) => {
 			const wifi = wifiStore?.get() ?? DEFAULT_WIFI_CONFIG;
 			if (!wifi.configured || !wifi.token) { reject(new Error('WiFi not configured')); return; }
-			const payload = JSON.stringify({ title, message, color: 0xD3AB, durationMs: 6000 });
+			const payload = JSON.stringify({ v: WIFI_PROTOCOL_VERSION, title, message, color: 0xD3AB, durationMs: 6000 });
 			const req = http.request({
 				hostname: 'beak-buddy.local', port: 80, path: '/notify', method: 'POST',
 				headers: {
-					'X-Gaze-Token': wifi.token,
+					'X-Beak-Token': wifi.token,
 					'Content-Type': 'application/json',
 					'Content-Length': Buffer.byteLength(payload),
 				},
@@ -1122,6 +1166,64 @@ ipcMain.handle('claude:isSetup', () => isClaudeHooksSetup());
 ipcMain.handle('claude:setup', () => { setupClaudeHooks(); return true; });
 ipcMain.handle('claude:getUsage', () => ({ ...claudeUsage }));
 ipcMain.handle('claude:getSource', () => claudeCodeSource);
+
+// Fires a synthetic "working" state through the exact same path a real
+// Claude Code hook would use (local relay or straight to the device over
+// WiFi, whichever setupClaudeHooks() currently targets) — isolates "is the
+// app→device pipeline actually working" from "are Claude Code's own hooks
+// configured/firing," which is the ambiguity that made every hook bug this
+// project has hit so hard to diagnose without asking the user to read a log
+// file by hand.
+ipcMain.handle('claude:testIntegration', async () => {
+	const hooksConfigured = isClaudeHooksSetup();
+	const target = currentHookTarget();
+
+	if (target.host === '127.0.0.1') {
+		if (!isDeviceConnected || !activePort?.isOpen) {
+			return { ok: false, hooksConfigured, message: 'Hooks target this app’s local relay, but the device isn’t connected over USB right now.' };
+		}
+		handleClaudeCodeState('working');
+		setTimeout(() => handleClaudeCodeState('idle'), 1500);
+		return { ok: true, hooksConfigured, message: 'Sent a test "working" state to the device over USB — check the screen for a brief flash.' };
+	}
+
+	try {
+		await new Promise<void>((resolve, reject) => {
+			const payload = JSON.stringify({ v: WIFI_PROTOCOL_VERSION, state: 'working', source: 'test' });
+			const req = http.request({
+				hostname: target.host, port: target.port, path: '/claude-state', method: 'POST',
+				headers: {
+					...(target.token ? { 'X-Beak-Token': target.token } : {}),
+					'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload),
+				},
+			}, (res) => {
+				res.resume();
+				if (res.statusCode === 200) resolve();
+				else reject(new Error(`device responded ${res.statusCode}`));
+			});
+			req.on('error', reject);
+			req.setTimeout(5000, () => { req.destroy(); reject(new Error('timed out')); });
+			req.write(payload);
+			req.end();
+		});
+		setTimeout(() => {
+			const payload = JSON.stringify({ v: WIFI_PROTOCOL_VERSION, state: 'idle', source: 'test' });
+			const req = http.request({
+				hostname: target.host, port: target.port, path: '/claude-state', method: 'POST',
+				headers: {
+					...(target.token ? { 'X-Beak-Token': target.token } : {}),
+					'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload),
+				},
+			}, (res) => res.resume());
+			req.on('error', () => {});
+			req.write(payload);
+			req.end();
+		}, 1500);
+		return { ok: true, hooksConfigured, message: `Reached the device at ${target.host} — check the screen for a brief "working" flash.` };
+	} catch (e) {
+		return { ok: false, hooksConfigured, message: `Could not reach the device: ${(e as Error).message}` };
+	}
+});
 
 ipcMain.on('pomodoro:setActive', (_, active: boolean) => {
 	isPomodoroActive = active;

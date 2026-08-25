@@ -1,7 +1,7 @@
 #pragma once
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Піни (перевірені на платі)
+// Pins (verified on the board)
 // ═════════════════════════════════════════════════════════════════════════════
 
 #define PIN_BACKLIGHT 21
@@ -49,7 +49,7 @@ public:
 LGFX_BeakBuddy lcd;
 Adafruit_NeoPixel pixels(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 
-// ── 128×64 "віртуальний" канвас — масштабується на справжній екран ─────────
+// ── 128×64 "virtual" canvas — scaled up to the real screen ─────────────────
 #define OLED_W 128
 #define OLED_H 64
 #define OLED_SCALE 2
@@ -58,28 +58,28 @@ const int OLED_DRAW_H = OLED_H * OLED_SCALE;
 const int OLED_DRAW_X = (320 - OLED_DRAW_W) / 2;
 const int OLED_DRAW_Y = (240 - OLED_DRAW_H) / 2;
 
-// ── [НОВЕ] Повноекранний режим Pomodoro — без анімації взагалі ─────────────
-// Кольори відповідають React-застосунку: #38bdf8 (робота), #4ade80 (перерва)
+// ── Full-screen Pomodoro mode — no animation at all ─────────────────────────
+// Colors match the React app: #38bdf8 (work), #4ade80 (break)
 #define POMO_WORK_COLOR 0x3DFF
 #define POMO_BREAK_COLOR 0x4EF0
-#define POMO_LONGBREAK_COLOR 0x633D  // indigo — той самий #6366f1, що й React PHASE_META.longBreak
+#define POMO_LONGBREAK_COLOR 0x633D  // indigo — same #6366f1 as React PHASE_META.longBreak
 
-// ── [НОВЕ] Claude Code full-screen status — окремий екран, без анімації ────
-// Дизайн орієнтований на брендовий колір Claude (термакота/orange #D97757).
+// ── Claude Code full-screen status — its own screen, no animation ──────────
+// Design built around Claude's brand color (terracotta/orange #D97757).
 #define CLAUDE_WORKING_COLOR 0xD3AB  // Claude orange (#D97757)
-#define CLAUDE_DONE_COLOR 0x4EF0     // той самий зелений, що й pomo break
-#define CLAUDE_WAITING_COLOR 0xF800  // яскраво-червоний
-#define CLAUDE_THINKING_COLOR 0xAABE // фіолетовий (той самий брендовий #a855f7, що й у застосунку) — між UserPromptSubmit і першим tool-call
-#define CLAUDE_NEUTRAL_COLOR 0x39C7  // сірий — заглушка, поки немає sub-стану
-#define CLAUDE_BG_DARK 0x0862        // майже чорний фон екрану
-#define CLAUDE_CARD_BG 0x18C4        // фон картки статистики
-#define CLAUDE_TRACK_COLOR 0x2965    // фон доріжки прогрес-бару
-#define CLAUDE_TEXT_MUTED 0x8430     // приглушений сірий текст
-#define CLAUDE_PCT_5H_COLOR 0xD3AB   // бар сесії (5h) — orange
-#define CLAUDE_PCT_7D_COLOR 0xF9F0   // бар тижня (7d) — pink
+#define CLAUDE_DONE_COLOR 0x4EF0     // same green as pomo break
+#define CLAUDE_WAITING_COLOR 0xF800  // bright red
+#define CLAUDE_THINKING_COLOR 0xAABE // purple (same brand #a855f7 as the app) — between UserPromptSubmit and the first tool call
+#define CLAUDE_NEUTRAL_COLOR 0x39C7  // gray — placeholder while there's no sub-state yet
+#define CLAUDE_BG_DARK 0x0862        // near-black screen background
+#define CLAUDE_CARD_BG 0x18C4        // stat card background
+#define CLAUDE_TRACK_COLOR 0x2965    // progress bar track background
+#define CLAUDE_TEXT_MUTED 0x8430     // muted gray text
+#define CLAUDE_PCT_5H_COLOR 0xD3AB   // session bar (5h) — orange
+#define CLAUDE_PCT_7D_COLOR 0xF9F0   // weekly bar (7d) — pink
 
-// ── [НОВЕ] Буфер для кольорових (RGB565 delta+RLE) анімацій ────────────────
-// Має збігатись з FIRMWARE_CROP_W_MAX/H_MAX у convert_animation.mjs.
+// ── Buffer for colored (RGB565 delta+RLE) animations ────────────────────────
+// Must match FIRMWARE_CROP_W_MAX/H_MAX in convert_animation.mjs.
 #define COLOR_CROP_W_MAX 310
 #define COLOR_CROP_H_MAX 160
 #define COLOR_MAX_PIXELS (COLOR_CROP_W_MAX * COLOR_CROP_H_MAX)

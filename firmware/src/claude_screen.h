@@ -1,10 +1,10 @@
 #pragma once
 
-// [НОВЕ] Claude Code — тонка кольорова смужка стану зверху + дві картки
-// статистики (SESSION 5h / WEEKLY 7d), стилізовані під rounded stat cards.
-// Смужка малюється лише при зміні sub-стану (drawClaudeScreen), картки
-// оновлюються окремо (drawClaudeUsageBars), щоб #USAGE: не перемальовував
-// весь екран щоразу.
+// Claude Code — a thin colored status strip at the top + two stat cards
+// (SESSION 5h / WEEKLY 7d), styled as rounded stat cards. The strip is only
+// redrawn when the sub-state changes (drawClaudeScreen); the cards update
+// separately (drawClaudeUsageBars) so #USAGE: doesn't redraw the whole
+// screen every time.
 
 void formatResetsIn(char *buf, size_t bufSize, long secs)
 {
@@ -51,7 +51,7 @@ void drawClaudeCard(int x, int y, int w, int h, const char *label, float pct, ui
     if (frac > 1)
       frac = 1;
     if (frac < 0.04f)
-      frac = 0.04f; // лишаємо видиму крапку навіть при ~0%
+      frac = 0.04f; // keep a visible dot even at ~0%
     int fillW = (int)(barW * frac);
     lcd.fillRoundRect(barX, barY, fillW, barH, barH / 2, barColor);
     lcd.fillCircle(barX + fillW, barY + barH / 2, 6, barColor);
@@ -105,7 +105,7 @@ void drawClaudeScreen()
   lcd.fillScreen(CLAUDE_BG_DARK);
   lcd.fillRect(0, 0, 320, 30, stripColor);
   lcd.setTextSize(1);
-  lcd.setTextColor(0x0000, stripColor); // чорний текст — краще видно на маленькому екрані, ніж білий
+  lcd.setTextColor(0x0000, stripColor); // black text — more legible on this small screen than white
   lcd.setCursor(10, 11);
   lcd.print("CLAUDE CODE");
   int labelW = strlen(label) * 6;
@@ -121,15 +121,15 @@ void setNeo(uint8_t r, uint8_t g, uint8_t b)
   pixels.show();
 }
 
-// Кожен стан: масив кадрів, кількість, затримка, колір, чи зациклювати
+// Each state: frame array, count, delay, color, whether it loops
 void enterState(GazeState s)
 {
   currentState = s;
-  activeIsColorPlayer = false; // за замовчуванням mono; колірні стани виставлять true самі
+  activeIsColorPlayer = false; // mono by default; color states set this true themselves
 
-  // [ФІКС] Pomodoro малює на ВЕСЬ екран, інші стани — лише в маленькій
-  // центральній області. Тому чистимо весь екран при БУДЬ-якій зміні
-  // стану — інакше після Pomodoro навколо anімації лишався б старий фон/текст.
+  // Pomodoro draws to the WHOLE screen, other states only to a small central
+  // area. So the whole screen is cleared on ANY state change — otherwise old
+  // background/text would linger around the animation after leaving Pomodoro.
   lcd.fillScreen(0x0000);
 
   // Auto-lock during pomodoro states; unlock when leaving them
@@ -138,8 +138,8 @@ void enterState(GazeState s)
   switch (s)
   {
   case ST_STARTUP:
-    // [НОВЕ] startup01.h тепер теж кольоровий (RGB565 delta+RLE) — конвертований
-    // зі старою назвою BOOT_ANIM, тому й префікс констант саме такий.
+    // startup01.h is also color now (RGB565 delta+RLE) — converted under the
+    // old BOOT_ANIM name, hence the constant prefix.
     activeIsColorPlayer = true;
     colorPlayer.load(BOOT_ANIM_frames, BOOT_ANIM_sizes, BOOT_ANIM_types,
                      BOOT_ANIM_FRAME_COUNT, BOOT_ANIM_FPS,
@@ -147,7 +147,7 @@ void enterState(GazeState s)
     setNeo(128, 0, 12);
     break;
   case ST_IDLE:
-    // [НОВЕ] кольорова анімація через ColorAnimPlayer
+    // Color animation via ColorAnimPlayer
     activeIsColorPlayer = true;
     colorPlayer.load(IDLE_ANIM_frames, IDLE_ANIM_sizes, IDLE_ANIM_types,
                      IDLE_ANIM_FRAME_COUNT, IDLE_ANIM_FPS,
@@ -183,18 +183,18 @@ void enterState(GazeState s)
     setNeo(200, 0, 0);
     break;
   case ST_POMO_WORK:
-    // [НОВЕ] повний екран, без анімації — фон+підпис малюємо один раз тут,
-    // час+бар прийдуть окремо через #TIME: і оновлюватимуться без перемальовки фону
+    // Full screen, no animation — background+label drawn once here; the
+    // time+bar arrive separately via #TIME: and update without redrawing the background
     drawPomodoroBackground(POMO_WORK_COLOR, "WORK");
-    setNeo(56, 189, 248); // той самий #38bdf8
+    setNeo(56, 189, 248); // same #38bdf8
     break;
   case ST_POMO_BREAK:
     drawPomodoroBackground(POMO_BREAK_COLOR, "BREAK");
-    setNeo(74, 222, 128); // той самий #4ade80
+    setNeo(74, 222, 128); // same #4ade80
     break;
   case ST_POMO_LONGBREAK:
     drawPomodoroBackground(POMO_LONGBREAK_COLOR, "LONG BREAK");
-    setNeo(99, 102, 241); // той самий #6366f1
+    setNeo(99, 102, 241); // same #6366f1
     break;
   case ST_CLAUDE:
     drawClaudeScreen();
@@ -216,9 +216,9 @@ void enterState(GazeState s)
   }
 }
 
-// [НОВЕ] Спільний код для #CLAUDE:/#USAGE: (серійний порт) і /claude-state,
-// /claude-usage (WiFi HTTP, див. wifi_manager.h) — один шлях застосування
-// оновлення, незалежно від того, звідки воно прийшло.
+// Shared code for #CLAUDE:/#USAGE: (serial) and /claude-state, /claude-usage
+// (WiFi HTTP, see wifi_manager.h) — one single path for applying an update,
+// regardless of where it came from.
 
 void applyClaudeState(int sub)
 {
@@ -248,15 +248,19 @@ void applyClaudeState(int sub)
   enterState(target);
 }
 
-// NeoPixel breathing while Claude is actively "working" or "thinking" — a
+// NeoPixel activity indicator while Claude is "working" or "thinking" — a
 // static solid color looked identical whether something was actually
-// happening or the screen was just sitting there. "Working" is rate-of-
-// change-aware (pulses faster/brighter right after a burst of tool calls,
-// settling into a slower rhythm once quiet for a few seconds); "thinking"
-// has no comparable per-call bursts to react to (UserPromptSubmit fires once
-// per turn, not repeatedly), so it just gets a calm steady breath instead.
-// Non-blocking, throttled to ~25fps since a breathing LED doesn't need — and
-// pixels.show() shouldn't be spammed at — full loop() speed.
+// happening or the screen was just sitting there. "Working" (orange) is a
+// rate-of-change-aware BLINK — an actual on/off toggle, faster right after a
+// burst of tool calls, settling into a slower blink once quiet for a few
+// seconds — deliberately more attention-grabbing than a fade, since it means
+// the device is actively doing something right now. "Thinking" (purple) has
+// no comparable per-call bursts to react to (UserPromptSubmit fires once per
+// turn, not repeatedly), so it stays a calm steady breathing fade instead —
+// blinking would be distracting for a state that can last a while with
+// nothing new to report. Non-blocking, throttled to ~25fps since neither
+// effect needs — and pixels.show() shouldn't be spammed at — full loop()
+// speed.
 void pollClaudeActivityPulse()
 {
   if (currentState != ST_CLAUDE || (claudeSubState != 1 && claudeSubState != 4))
@@ -268,24 +272,19 @@ void pollClaudeActivityPulse()
     return;
   lastUpdateMs = now;
 
-  unsigned long periodMs;
-  uint8_t baseR, baseG, baseB;
   if (claudeSubState == 1)
   {
     unsigned long sinceLastPing = now - lastClaudeWorkingPingMs;
-    periodMs = (sinceLastPing < 5000) ? 1200 : 3000;
-    baseR = 217; baseG = 119; baseB = 87; // Claude orange (#D97757)
-  }
-  else
-  {
-    periodMs = 2200;
-    baseR = 168; baseG = 85; baseB = 247; // brand purple (#a855f7)
+    unsigned long blinkPeriodMs = (sinceLastPing < 5000) ? 400 : 900;
+    bool on = (now % blinkPeriodMs) < (blinkPeriodMs / 2);
+    setNeo(on ? 217 : 0, on ? 119 : 0, on ? 87 : 0); // Claude orange (#D97757) or off
+    return;
   }
 
+  const unsigned long periodMs = 2200;
   float phase = (now % periodMs) / (float)periodMs;
   float brightness = 0.55f + 0.45f * (0.5f - 0.5f * cosf(phase * 2.0f * PI));
-
-  setNeo((uint8_t)(baseR * brightness), (uint8_t)(baseG * brightness), (uint8_t)(baseB * brightness));
+  setNeo((uint8_t)(168 * brightness), (uint8_t)(85 * brightness), (uint8_t)(247 * brightness)); // brand purple (#a855f7)
 }
 
 // Non-blocking — called every loop() iteration. Mirrors the desktop app's own

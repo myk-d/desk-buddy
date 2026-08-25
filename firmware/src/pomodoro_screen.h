@@ -1,8 +1,9 @@
 #pragma once
 
-// [НОВЕ] Pomodoro — повний екран, без анімації. Фон малюється один раз при
-// вході в стан (enterState), текст часу й прогрес-бар — окремо, при кожному
-// #TIME:, щоб не перемальовувати весь екран щосекунди (менше SPI-трафіку).
+// Pomodoro — full screen, no animation. The background is drawn once on
+// entering the state (enterState); the time text and progress bar are drawn
+// separately, on every #TIME:, so the whole screen isn't redrawn every
+// second (less SPI traffic).
 
 void drawPomodoroBackground(uint16_t bg, const char *label)
 {
@@ -23,8 +24,8 @@ void drawPomodoroTime(int secondsLeft, int totalSeconds)
   char buf[8];
   snprintf(buf, sizeof(buf), "%d:%02d", secondsLeft / 60, secondsLeft % 60);
 
-  // Великий час, по центру — ширина рахується динамічно (4 чи 5 символів
-  // мають різну ширину, інакше центрування "стрибало" б при зміні хвилин)
+  // Big centered time — width computed dynamically (4 vs 5 characters have
+  // different widths, otherwise the centering would "jump" as minutes change)
   lcd.fillRect(0, 90, 320, 70, bg);
   lcd.setTextSize(8);
   lcd.setTextColor(0xFFFF, bg);
@@ -32,7 +33,7 @@ void drawPomodoroTime(int secondsLeft, int totalSeconds)
   lcd.setCursor((320 - textW) / 2, 95);
   lcd.print(buf);
 
-  // Прогрес-бар знизу — заповнюється зліва направо за минулий час
+  // Progress bar at the bottom — fills left to right as time elapses
   const int barX = 20, barY = 210, barW = 280, barH = 6;
   float frac = (totalSeconds > 0) ? (float)(totalSeconds - secondsLeft) / totalSeconds : 0.0f;
   if (frac < 0)

@@ -1,24 +1,24 @@
 #pragma once
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Локальний HTTP-сервер (WiFi) — усі маршрути й обробники. Розділено з
-// wifi_manager.h (яка лишає собі підключення/сканування/NVS/mDNS), бо цей
-// файл зростає з новими фічами (діагностика, дашборд, notify, OTA).
+// Local HTTP server (WiFi) — every route and handler. Split out of
+// wifi_manager.h (which keeps connect/scan/NVS/mDNS to itself) since this
+// file keeps growing with new features (diagnostics, dashboard, notify, OTA).
 // ═════════════════════════════════════════════════════════════════════════════
 
 #include <WebServer.h>
 #include <Update.h>
 
-// Визначені пізніше в main.cpp — HTTP-обробники нижче ведуть до того самого
-// коду, що й серійні команди #CLAUDE:/#USAGE:.
+// Defined later in main.cpp — the HTTP handlers below lead to the same code
+// as the #CLAUDE:/#USAGE: serial commands.
 void applyClaudeState(int sub);
 void applyClaudeUsage(float fiveHourPct, long fiveHourSecs, float sevenDayPct, long sevenDaySecs);
 void applyNotify(const String &title, const String &message, uint16_t color, unsigned long durationMs);
 
-WebServer gazeServer(80);
-String gazeToken = "";
+WebServer beakServer(80);
+String beakToken = "";
 
-// Витягує рядкове значення "key":"value" з фіксованого JSON-тіла.
+// Extracts a string value "key":"value" from a fixed JSON body.
 String jsonExtractString(const String &body, const String &key)
 {
   String needle = "\"" + key + "\":\"";
@@ -32,7 +32,7 @@ String jsonExtractString(const String &body, const String &key)
   return body.substring(start, end);
 }
 
-// Витягує числове значення "key":123.45 (або null → fallback).
+// Extracts a numeric value "key":123.45 (or null → fallback).
 float jsonExtractNumber(const String &body, const String &key, float fallback)
 {
   String needle = "\"" + key + "\":";
@@ -48,21 +48,21 @@ float jsonExtractNumber(const String &body, const String &key, float fallback)
   return body.substring(start, end).toFloat();
 }
 
-bool checkGazeToken()
+bool checkBeakToken()
 {
-  if (gazeToken.length() == 0)
-    return false; // WiFi не налаштовано через наш протокол — відхиляємо все
-  return gazeServer.header("X-Gaze-Token") == gazeToken;
+  if (beakToken.length() == 0)
+    return false; // WiFi not configured through our protocol — reject everything
+  return beakServer.header("X-Beak-Token") == beakToken;
 }
 
 void handleClaudeStateHttp()
 {
-  if (!checkGazeToken())
+  if (!checkBeakToken())
   {
-    gazeServer.send(403, "text/plain", "forbidden");
+    beakServer.send(403, "text/plain", "forbidden");
     return;
   }
-  String body = gazeServer.arg("plain");
+  String body = beakServer.arg("plain");
   String state = jsonExtractString(body, "state");
   int subCode = -1;
   if (state == "idle")
@@ -82,17 +82,17 @@ void handleClaudeStateHttp()
     Serial.print("CLAUDE_RELAY:");
     Serial.println(state);
   }
-  gazeServer.send(200, "text/plain", "ok");
+  beakServer.send(200, "text/plain", "ok");
 }
 
 void handleClaudeUsageHttp()
 {
-  if (!checkGazeToken())
+  if (!checkBeakToken())
   {
-    gazeServer.send(403, "text/plain", "forbidden");
+    beakServer.send(403, "text/plain", "forbidden");
     return;
   }
-  String body = gazeServer.arg("plain");
+  String body = beakServer.arg("plain");
   float fiveHourPct = jsonExtractNumber(body, "fiveHourPct", -1);
   long fiveHourSecs = (long)jsonExtractNumber(body, "fiveHourSecsLeft", 0);
   float sevenDayPct = jsonExtractNumber(body, "sevenDayPct", -1);
@@ -108,7 +108,7 @@ void handleClaudeUsageHttp()
   Serial.print(",");
   Serial.println(sevenDaySecs);
 
-  gazeServer.send(200, "text/plain", "ok");
+  beakServer.send(200, "text/plain", "ok");
 }
 
 const char *gazeStateName()
@@ -137,6 +137,7 @@ const char *gazeStateName()
 void handleStatusJson()
 {
   String json = "{";
+  json += "\"protocolVersion\":1,";
   json += "\"heap\":" + String(ESP.getFreeHeap()) + ",";
   json += "\"rssi\":" + String(WiFi.RSSI()) + ",";
   json += "\"uptimeMs\":" + String(millis()) + ",";
@@ -146,7 +147,7 @@ void handleStatusJson()
   json += "\"ntpSynced\":" + String(ntpSynced() ? "true" : "false") + ",";
   json += "\"time\":" + String((long)time(nullptr));
   json += "}";
-  gazeServer.send(200, "application/json", json);
+  beakServer.send(200, "application/json", json);
 }
 
 // GET / — small static page, no server-side templating: fetches
@@ -189,7 +190,7 @@ setInterval(poll, 3000);
 
 void handleDashboardHtml()
 {
-  gazeServer.send_P(200, "text/html", DASHBOARD_HTML);
+  beakServer.send_P(200, "text/html", DASHBOARD_HTML);
 }
 
 // POST /notify — generic ambient-status update, not tied to Claude Code.
@@ -200,18 +201,18 @@ void handleDashboardHtml()
 // — same pattern as the Claude "done" screen already uses.
 void handleNotifyHttp()
 {
-  if (!checkGazeToken())
+  if (!checkBeakToken())
   {
-    gazeServer.send(403, "text/plain", "forbidden");
+    beakServer.send(403, "text/plain", "forbidden");
     return;
   }
-  String body = gazeServer.arg("plain");
+  String body = beakServer.arg("plain");
   String title = jsonExtractString(body, "title");
   String message = jsonExtractString(body, "message");
   uint16_t color = (uint16_t)jsonExtractNumber(body, "color", 0xFFFF);
   unsigned long durationMs = (unsigned long)jsonExtractNumber(body, "durationMs", 5000);
   applyNotify(title, message, color, durationMs);
-  gazeServer.send(200, "text/plain", "ok");
+  beakServer.send(200, "text/plain", "ok");
 }
 
 // POST /update — OTA firmware flash over WiFi, sidestepping the USB
@@ -232,28 +233,28 @@ bool otaAuthorized = false;
 // do that mid-stream.
 void handleUpdateHttp()
 {
-  gazeServer.sendHeader("Connection", "close");
+  beakServer.sendHeader("Connection", "close");
   if (!otaAuthorized)
   {
-    gazeServer.send(403, "text/plain", "forbidden");
+    beakServer.send(403, "text/plain", "forbidden");
     return;
   }
   if (Update.hasError())
   {
-    gazeServer.send(500, "text/plain", "update failed");
+    beakServer.send(500, "text/plain", "update failed");
     return;
   }
-  gazeServer.send(200, "text/plain", "update ok, rebooting");
+  beakServer.send(200, "text/plain", "update ok, rebooting");
   delay(500); // let the response actually flush before rebooting (same precedent as the #R serial command)
   ESP.restart();
 }
 
 void handleUpdateUpload()
 {
-  HTTPUpload &upload = gazeServer.upload();
+  HTTPUpload &upload = beakServer.upload();
   if (upload.status == UPLOAD_FILE_START)
   {
-    otaAuthorized = checkGazeToken();
+    otaAuthorized = checkBeakToken();
     if (!otaAuthorized)
       return; // rejected cleanly in handleUpdateHttp() once this (ignored) upload finishes
     if (!Update.begin(UPDATE_SIZE_UNKNOWN))
@@ -275,20 +276,20 @@ void handleUpdateUpload()
   }
 }
 
-// Реєструє всі маршрути + власні заголовки (X-Gaze-Token). Викликається один
-// раз, одразу після першого успішного підключення до WiFi (wifiPoll()).
+// Registers every route + custom headers (X-Beak-Token). Called once, right
+// after the first successful WiFi connection (wifiPoll()).
 void webServerBegin()
 {
   // WebServer only exposes headers explicitly registered here — without
-  // this, server.header("X-Gaze-Token") always returns "" and every
+  // this, server.header("X-Beak-Token") always returns "" and every
   // request gets rejected as forbidden, even with the correct token.
-  const char *headerKeys[] = {"X-Gaze-Token"};
-  gazeServer.collectHeaders(headerKeys, 1);
-  gazeServer.on("/claude-state", HTTP_POST, handleClaudeStateHttp);
-  gazeServer.on("/claude-usage", HTTP_POST, handleClaudeUsageHttp);
-  gazeServer.on("/status.json", HTTP_GET, handleStatusJson);
-  gazeServer.on("/", HTTP_GET, handleDashboardHtml);
-  gazeServer.on("/notify", HTTP_POST, handleNotifyHttp);
-  gazeServer.on("/update", HTTP_POST, handleUpdateHttp, handleUpdateUpload);
-  gazeServer.begin();
+  const char *headerKeys[] = {"X-Beak-Token"};
+  beakServer.collectHeaders(headerKeys, 1);
+  beakServer.on("/claude-state", HTTP_POST, handleClaudeStateHttp);
+  beakServer.on("/claude-usage", HTTP_POST, handleClaudeUsageHttp);
+  beakServer.on("/status.json", HTTP_GET, handleStatusJson);
+  beakServer.on("/", HTTP_GET, handleDashboardHtml);
+  beakServer.on("/notify", HTTP_POST, handleNotifyHttp);
+  beakServer.on("/update", HTTP_POST, handleUpdateHttp, handleUpdateUpload);
+  beakServer.begin();
 }

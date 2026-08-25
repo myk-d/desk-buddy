@@ -2,6 +2,8 @@
 	"name": "beak-buddy-hub",
 	"private": true,
 	"version": "0.3.1",
+	"description": "Electron companion app for the Beak Buddy ESP32 desktop gadget",
+	"author": "MD",
 	"type": "module",
 	"scripts": {
 		"dev": "vite",

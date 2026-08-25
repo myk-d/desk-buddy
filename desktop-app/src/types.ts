@@ -205,6 +205,7 @@ declare global {
 			claude: {
 				isSetup: () => Promise<boolean>;
 				setup: () => Promise<boolean>;
+				testIntegration: () => Promise<{ ok: boolean; hooksConfigured: boolean; message: string }>;
 				getUsage: () => Promise<ClaudeUsage>;
 				getSource: () => Promise<string | null>;
 				onState: (cb: (state: string) => void) => void;

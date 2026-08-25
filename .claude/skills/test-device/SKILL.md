@@ -39,15 +39,15 @@ Expect: HTML starting with `<!DOCTYPE html>`, containing the `/status.json`-poll
 Get the current token from an installed hook script:
 
 ```bash
-TOKEN=$(grep -oP "X-Gaze-Token: \K[a-f0-9]+" ~/.claude/settings.json)
+TOKEN=$(grep -oP "X-Beak-Token: \K[a-f0-9]+" ~/.claude/settings.json)
 ```
 
 Test auth (each should be a single Bash call combining trigger + check, to avoid a concurrent Claude Code hook clobbering device state between separate tool calls):
 
 ```bash
 curl -s -o /dev/null -w "no token: %{http_code}\n" -X POST http://beak-buddy.local/notify -d '{}'
-curl -s -o /dev/null -w "wrong token: %{http_code}\n" -X POST http://beak-buddy.local/notify -H "X-Gaze-Token: wrong" -d '{}'
-curl -s -o /dev/null -X POST http://beak-buddy.local/notify -H "X-Gaze-Token: $TOKEN" -d '{"title":"Test","message":"hi","color":2016,"durationMs":5000}'
+curl -s -o /dev/null -w "wrong token: %{http_code}\n" -X POST http://beak-buddy.local/notify -H "X-Beak-Token: wrong" -d '{}'
+curl -s -o /dev/null -X POST http://beak-buddy.local/notify -H "X-Beak-Token: $TOKEN" -d '{"title":"Test","message":"hi","color":2016,"durationMs":5000}'
 curl -s http://beak-buddy.local/status.json
 ```
 

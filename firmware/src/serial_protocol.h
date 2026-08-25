@@ -1,7 +1,7 @@
 #pragma once
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Serial — протокол #ANIM:<назва>\n  та  #R\n
+// Serial — protocol #ANIM:<name>\n and #R\n
 // ═════════════════════════════════════════════════════════════════════════════
 
 // Fixed buffer instead of a String — the old `packetBuf += c` ran once per
@@ -27,9 +27,9 @@ void handlePacket(const String &cmd)
     return;
   }
 
-  // [НОВЕ] #TIME:<секунди_залишилось>:<всього_секунд> — оновлює великий час
-  // і прогрес-бар. Працює ТІЛЬКИ в режимах ST_POMO_WORK/ST_POMO_BREAK/
-  // ST_POMO_LONGBREAK — звичайний #ANIM:focus (без pomo) цю команду просто ігнорує.
+  // #TIME:<seconds_left>:<total_seconds> — updates the big time display and
+  // progress bar. Only works in ST_POMO_WORK/ST_POMO_BREAK/ST_POMO_LONGBREAK
+  // — a plain #ANIM:focus (no pomo) just ignores this command.
   if (cmd.startsWith("TIME:"))
   {
     if (currentState == ST_POMO_WORK || currentState == ST_POMO_BREAK || currentState == ST_POMO_LONGBREAK)
@@ -73,8 +73,8 @@ void handlePacket(const String &cmd)
 
   if (cmd.startsWith("USAGE:"))
   {
-    // #USAGE:<5hPct>,<5hSecsLeft>,<7dPct>,<7dSecsLeft>\n — секунди до
-    // скидання рахує додаток (у нього є реальний час), прошивка лише показує.
+    // #USAGE:<5hPct>,<5hSecsLeft>,<7dPct>,<7dSecsLeft>\n — the app computes
+    // the seconds-until-reset (it has real wall-clock time); firmware just displays it.
     String rest = cmd.substring(6);
     int c1 = rest.indexOf(',');
     int c2 = (c1 >= 0) ? rest.indexOf(',', c1 + 1) : -1;
@@ -186,27 +186,27 @@ void handlePacket(const String &cmd)
     else if (name == "pomowork")
     {
       enterState(ST_POMO_WORK);
-      Serial.println("✅ ANIM → pomowork (повний екран)");
+      Serial.println("✅ ANIM → pomowork (full screen)");
     }
     else if (name == "pomobreak")
     {
       enterState(ST_POMO_BREAK);
-      Serial.println("✅ ANIM → pomobreak (повний екран)");
+      Serial.println("✅ ANIM → pomobreak (full screen)");
     }
     else if (name == "pomolongbreak")
     {
       enterState(ST_POMO_LONGBREAK);
-      Serial.println("✅ ANIM → pomolongbreak (повний екран)");
+      Serial.println("✅ ANIM → pomolongbreak (full screen)");
     }
     else
     {
-      Serial.print("⚠️ Невідома анімація: ");
+      Serial.print("⚠️ Unknown animation: ");
       Serial.println(name);
     }
   }
   else
   {
-    Serial.print("⚠️ Невідома команда: #");
+    Serial.print("⚠️ Unknown command: #");
     Serial.println(cmd);
   }
 }

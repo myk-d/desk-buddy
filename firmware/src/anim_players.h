@@ -1,8 +1,8 @@
 #pragma once
 
 // ═════════════════════════════════════════════════════════════════════════════
-// MonoCanvas — рендер 1bpp Adafruit_GFX-бітмапа (MSB зліва) у заданому кольорі,
-// з масштабуванням на справжній екран через спрайт-буфер
+// MonoCanvas — renders a 1bpp Adafruit_GFX bitmap (MSB first) in a given
+// color, scaled up to the real screen through a sprite buffer
 // ═════════════════════════════════════════════════════════════════════════════
 
 class MonoCanvas
@@ -21,7 +21,7 @@ public:
 
   void clear() { buf.fillScreen(0x0000); }
 
-  // bitmap: 1bpp, MSB зліва, byteWidth байт на рядок (як у idle01.h/focus01.h/...)
+  // bitmap: 1bpp, MSB first, byteWidth bytes per row (as in idle01.h/focus01.h/...)
   // Draws both ON (color) and OFF (black) pixels so caller doesn't need clear().
   void drawBitmap(const uint8_t *bitmap, int byteWidth, int h, uint16_t color)
   {
@@ -71,8 +71,8 @@ public:
 MonoCanvas canvas;
 
 // ═════════════════════════════════════════════════════════════════════════════
-// AnimPlayer — універсальний плеєр для xxx_frames[] + xxx_FRAME_COUNT/FPS
-// (структура файлів НЕ змінена — це той самий формат, що в idle01.h і т.д.)
+// AnimPlayer — a universal player for xxx_frames[] + xxx_FRAME_COUNT/FPS
+// (the file structure is unchanged — same format as idle01.h etc.)
 // ═════════════════════════════════════════════════════════════════════════════
 
 class AnimPlayer
@@ -89,10 +89,10 @@ public:
     _color = color;
     _frame = 0;
     _lastMs = millis();
-    _drawFrame(0); // одразу показуємо перший кадр, не чекаючи таймера
+    _drawFrame(0); // show the first frame immediately, don't wait for the timer
   }
 
-  // Повертає true, якщо це був останній кадр одноразової анімації
+  // Returns true if this was the last frame of a one-shot animation
   bool tick(bool loop)
   {
     if (!_frames)
@@ -136,19 +136,19 @@ private:
 AnimPlayer player;
 
 // ═════════════════════════════════════════════════════════════════════════════
-// [НОВЕ] ColorAnimPlayer — той самий decode-алгоритм, що в convert_animation.mjs:
-// кадр 0 = повний RLE-кейфрейм, кадри 1+ = тільки змінені пікселі (delta),
-// SKIP = кадр ідентичний попередньому (нічого не перемальовуємо).
+// ColorAnimPlayer — the same decode algorithm as convert_animation.mjs:
+// frame 0 = full RLE keyframe, frames 1+ = only the changed pixels (delta),
+// SKIP = frame identical to the previous one (nothing to redraw).
 //
-// На відміну від MonoCanvas (128×64, масштабується), ця анімація малюється
-// напряму у своїх власних екранних координатах (CROP_X/Y/W/H з заголовка) —
-// бо вона вже повноколірна і в "природній" роздільності, без масштабування.
+// Unlike MonoCanvas (128×64, scaled up), this animation is drawn directly at
+// its own screen coordinates (CROP_X/Y/W/H from the header) — because it's
+// already full-color and at its "native" resolution, no scaling needed.
 // ═════════════════════════════════════════════════════════════════════════════
 
 class ColorAnimPlayer
 {
 public:
-  // Викликати один раз у setup() — виділяє PSRAM-буфер під максимальний кроп
+  // Call once in setup() — allocates a PSRAM buffer sized for the largest crop
   bool begin()
   {
     _buf = (uint16_t *)ps_malloc(COLOR_MAX_PIXELS * sizeof(uint16_t));
@@ -157,10 +157,10 @@ public:
     return _buf != nullptr;
   }
 
-  // cropX/cropY/cropW/cropH — координати відносно того ж 128×64 "віртуального"
-  // полотна Rive, що й mono-анімації. Масштаб і центрування на справжній
-  // екран рахуються тим самим OLED_SCALE/OLED_DRAW_X/Y, що й для них —
-  // тож обидва типи контенту виглядають узгоджено в одному "просторі".
+  // cropX/cropY/cropW/cropH — coordinates relative to the same 128×64
+  // "virtual" Rive canvas as the mono animations. Scaling and centering onto
+  // the real screen uses the same OLED_SCALE/OLED_DRAW_X/Y as those do — so
+  // both content types look consistent in the same "space".
   void load(const uint8_t *const *frames, const uint16_t *sizes, const uint8_t *types,
             uint16_t count, uint8_t fps,
             uint16_t cropX, uint16_t cropY, uint16_t cropW, uint16_t cropH)
@@ -180,8 +180,8 @@ public:
     _renderFrame(0);
   }
 
-  // loop=false: зупиняється на останньому кадрі й повертає true (один раз) —
-  // потрібно для стартової анімації, яка має передати керування в idle.
+  // loop=false: stops on the last frame and returns true (once) — needed for
+  // the startup animation, which has to hand off control to idle.
   bool tick(bool loop)
   {
     if (_buf == nullptr)
@@ -214,15 +214,15 @@ private:
   const uint8_t *_types = nullptr;
   uint16_t _count = 0, _frame = 0;
   uint32_t _frameMs = 50;
-  int32_t _drawX = 0, _drawY = 0;  // реальні екранні координати лівого верхнього кута
-  uint16_t _cropW = 0, _cropH = 0; // розмір у "віртуальних" пікселях (до масштабу)
+  int32_t _drawX = 0, _drawY = 0;  // real screen coordinates of the top-left corner
+  uint16_t _cropW = 0, _cropH = 0; // size in "virtual" pixels (before scaling)
   unsigned long _lastMs = 0;
 
   void _renderFrame(uint16_t idx)
   {
     uint8_t type = pgm_read_byte(&_types[idx]);
     if (type == 2)
-      return; // SKIP — екран уже показує правильний кадр
+      return; // SKIP — the screen already shows the right frame
 
     uint16_t size = pgm_read_word(&_sizes[idx]);
     const uint8_t *data = (const uint8_t *)pgm_read_ptr(&_frames[idx]);
@@ -265,9 +265,9 @@ private:
     }
   }
 
-  // Масштабований блит через горизонтальні рани однакового кольору —
-  // та сама техніка, що в MonoCanvas::present(), лише тут кольори
-  // справжні (RGB565), а не лише фон/не-фон.
+  // Scaled blit via horizontal runs of the same color — same technique as
+  // MonoCanvas::present(), just with real colors here (RGB565) instead of
+  // only background/foreground.
   void _blit()
   {
     for (uint16_t y = 0; y < _cropH; y++)
