@@ -1,15 +1,14 @@
 # Beak Buddy Hub
 
-Electron companion app for the [Beak Buddy](../firmware) desktop gadget (ESP32-S3 + color TFT + NeoPixel). Auto-connects over USB, drives the device's screen from window activity / Claude Code / Pomodoro sessions, and doubles as a small local productivity hub (Tasks, Calendar, Pomodoro).
+Electron companion app for the [Beak Buddy](../firmware) desktop gadget (ESP32-S3 + color TFT + NeoPixel). Auto-connects over USB and drives the device's screen from window activity / Claude Code / Pomodoro sessions.
 
 ## Features
 
 - **Auto-connect** to the device over USB (no pairing step — plug in and go)
 - **Dashboard** — manual emotion control + live device log
-- **Tasks / Calendar / Pomodoro** — local-only productivity tools that also drive the device's screen
+- **Pomodoro** — a focus timer that also drives the device's screen
 - **Claude Code integration** — live working/done/waiting state and session/weekly usage bars on the device, from a terminal session, the VS Code extension, or both
-- **WiFi provisioning** — connect the device to your network so OTA firmware updates and ambient-status notifications keep working even when this app is closed. Claude Code stats specifically need this app running to stay accurate.
-- **Firmware updates** — one click, over WiFi (OTA) when available, USB otherwise
+- **WiFi provisioning** — connect the device to your network so ambient-status notifications keep working even when this app is closed. Claude Code stats specifically need this app running to stay accurate.
 
 ## Development
 
@@ -36,10 +35,6 @@ npm run build:win    # Windows
 npm run build:mac    # macOS
 npm run build:all    # Linux + Windows
 ```
-
-## Releasing
-
-Releases are cut via CI (`.github/workflows/build.yml`, manually triggered), keyed off this package's `version` field — it builds and publishes the firmware binary *and* all platform installers to a single GitHub release tagged `v<version>`. Bump the version here (and `FIRMWARE_VERSION` in `../firmware/src/main.cpp` to keep the device's self-reported version in sync), then trigger the workflow — don't build/publish manually with `npm run release`/`release:mac` unless you specifically need to bypass CI.
 
 ## Typecheck
 

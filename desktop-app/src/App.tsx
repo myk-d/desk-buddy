@@ -1,18 +1,13 @@
 import { useEffect, useState } from 'react';
 import { ANIM_MODE_MAP } from './constants';
 import { useSerial } from './hooks/useSerial';
-import { TaskStoreProvider, useTaskStoreContext } from './context/TaskStoreContext';
-import { EventStoreProvider, useEventStoreContext } from './context/EventStoreContext';
 import { PomodoroProvider } from './context/PomodoroContext';
 import { ConfirmProvider } from './context/ConfirmContext';
-import { useNotificationReminders } from './hooks/useNotificationReminders';
 import { DashboardPage } from './components/DashboardPage';
 import { Sidebar } from './components/Sidebar';
 import { ScanningScreen } from './components/ScanningScreen';
 import { SuccessScreen } from './components/SuccessScreen';
 import { WelcomeScreen } from './components/WelcomeScreen';
-import { TasksPage } from './components/TasksPage';
-import { CalendarPage } from './components/CalendarPage';
 import { PomodoroPage } from './components/PomodoroPage';
 import { DevicePage } from './components/DevicePage';
 import type { Page, Screen } from './types';
@@ -36,22 +31,18 @@ export default function App() {
 
 	return (
 		<ConfirmProvider>
-			<TaskStoreProvider>
-				<EventStoreProvider>
-					<PomodoroProvider sendPacket={sendAnimPacket}>
-						<AppShell
-							status={status}
-							connectedPath={connectedPath}
-							deviceLog={deviceLog}
-							setDeviceLog={setDeviceLog}
-							logEndRef={logEndRef}
-							sendPacket={sendPacket}
-							currentMode={currentMode}
-							setCurrentMode={setCurrentMode}
-						/>
-					</PomodoroProvider>
-				</EventStoreProvider>
-			</TaskStoreProvider>
+			<PomodoroProvider sendPacket={sendAnimPacket}>
+				<AppShell
+					status={status}
+					connectedPath={connectedPath}
+					deviceLog={deviceLog}
+					setDeviceLog={setDeviceLog}
+					logEndRef={logEndRef}
+					sendPacket={sendPacket}
+					currentMode={currentMode}
+					setCurrentMode={setCurrentMode}
+				/>
+			</PomodoroProvider>
 		</ConfirmProvider>
 	);
 }
@@ -72,15 +63,6 @@ function AppShell({ status, connectedPath, deviceLog, setDeviceLog, logEndRef, s
 		localStorage.getItem('gb_connected') ? 'dashboard' : 'scanning',
 	);
 	const [activePage, setActivePage] = useState<Page>('dashboard');
-	const [updateReady, setUpdateReady] = useState(false);
-
-	const { tasks } = useTaskStoreContext();
-	const { events } = useEventStoreContext();
-	useNotificationReminders(tasks, events);
-
-	useEffect(() => {
-		window.api.onUpdateReady(() => setUpdateReady(true));
-	}, []);
 
 	useEffect(() => {
 		if (status !== 'connected') return;
@@ -110,17 +92,6 @@ function AppShell({ status, connectedPath, deviceLog, setDeviceLog, logEndRef, s
 
 	return (
 		<div className="flex h-screen flex-col bg-stone-50 text-stone-800">
-			{updateReady && (
-				<div className="flex shrink-0 items-center justify-center gap-4 border-b border-blue-700 bg-blue-900 px-5 py-2.5 text-sm text-blue-200">
-					<span>A new version has been downloaded and is ready to install.</span>
-					<button
-						onClick={() => window.api.installUpdate()}
-						className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-500"
-					>
-						Restart to update
-					</button>
-				</div>
-			)}
 			<div className="flex min-h-0 flex-1">
 				<Sidebar
 					activePage={activePage}
@@ -142,8 +113,6 @@ function AppShell({ status, connectedPath, deviceLog, setDeviceLog, logEndRef, s
 							onClearLog={() => setDeviceLog([])}
 						/>
 					)}
-					{activePage === 'tasks' && <TasksPage />}
-					{activePage === 'calendar' && <CalendarPage />}
 					{activePage === 'device' && (
 						<DevicePage
 							connected={connected}

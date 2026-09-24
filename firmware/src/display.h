@@ -75,8 +75,16 @@ const int OLED_DRAW_Y = (240 - OLED_DRAW_H) / 2;
 #define CLAUDE_CARD_BG 0x18C4        // stat card background
 #define CLAUDE_TRACK_COLOR 0x2965    // progress bar track background
 #define CLAUDE_TEXT_MUTED 0x8430     // muted gray text
-#define CLAUDE_PCT_5H_COLOR 0xD3AB   // session bar (5h) — orange
-#define CLAUDE_PCT_7D_COLOR 0xF9F0   // weekly bar (7d) — pink
+#define CLAUDE_PCT_5H_COLOR 0xD3AB   // session ring (5h) fallback — orange, used only while there's no usage % yet to grade
+#define CLAUDE_PCT_7D_COLOR 0xF9F0   // weekly ring (7d) — pink, fixed regardless of usage level
+
+// Session-ring severity grading — same three tiers/thresholds as the desktop
+// app's pctColor() (DevicePage.tsx): <70% / 70-89% / >=90%. Only the session
+// (5h) ring and its NeoPixel blink use these; the weekly ring stays the fixed
+// pink above.
+#define CLAUDE_PCT_OK_COLOR 0x262B   // green-500 (#22c55e)
+#define CLAUDE_PCT_MED_COLOR 0xFDE4  // amber-400 (#fbbf24)
+#define CLAUDE_PCT_HIGH_COLOR 0xFB8E // red-400 (#f87171)
 
 // ── Buffer for colored (RGB565 delta+RLE) animations ────────────────────────
 // Must match FIRMWARE_CROP_W_MAX/H_MAX in convert_animation.mjs.

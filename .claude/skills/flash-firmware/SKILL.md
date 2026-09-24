@@ -17,15 +17,11 @@ Always the full path, never the bare `pio` command (the system-installed one is 
 
 This device's Linux USB-CDC driver doesn't support the DTR/RTS control-line toggling that `esptool`'s default reset sequence relies on to enter the bootloader. Attempting the standard upload fails with `Failed to connect to ESP32-S3: No serial data received` — this was tried and confirmed to fail; don't re-attempt it as a first option, it wastes time.
 
-## 3. Actual flashing paths
+## 3. Actual flashing path — manual, every time
 
-**Preferred — via the app**: open Beak Buddy Hub, go to the Device page, click "Update Firmware." As of the OTA feature, this:
-- Tries OTA over WiFi first if the device has WiFi configured (`electron/flasher.ts`'s `otaFlash()` → the device's own `/update` endpoint) — no bootloader dance needed at all.
-- Falls back to USB via `electron/flasher.ts`'s `flashFirmware()`, which uses a **1200-baud-touch reset trick** (open the port at 1200 baud, then close it — triggers the Arduino ESP32 native-USB-CDC auto-reset into ROM download mode) instead of the DTR/RTS approach, then flashes via `esptool-js` with `no_reset` (since the device is already in bootloader mode).
+The desktop app used to have an "Update Firmware" button (OTA-over-WiFi via `electron/flasher.ts`'s `otaFlash()`, falling back to a 1200-baud-touch USB trick) — that capability was **deliberately removed** from the app, on purpose, not replaced with a standalone script or an OTA-only path. Don't suggest resurrecting it from git history.
 
-Note: the app's "Update Firmware" button pulls from the **latest GitHub release**, not whatever's currently sitting in your local `firmware/` working tree — a local-only change needs a release cut (see the `release-cutter` agent / `/release`) before this button will offer it, unless you're testing the OTA/USB mechanism itself rather than your specific change.
-
-**For testing a local build directly**: Claude Code cannot flash the device itself in this environment (same DTR limitation, and no access to trigger the app's own OTA path standalone). Ask the user to redeploy manually — they've done this reliably several times by triggering it themselves outside of what Claude Code can automate here. After they confirm redeployment, verify with `/test-device` or the `device-tester` agent.
+Claude Code cannot flash the device itself in this environment (same DTR/RTS limitation, no automatable path left now that the app's flasher is gone). Ask the user to redeploy manually: hold the board's **BOOT button** (forces the native-USB-CDC into ROM download mode regardless of DTR/RTS) while running `~/.platformio/penv/bin/pio run --target upload` from `firmware/`, or while plugging the board in. They've done this reliably before. After they confirm redeployment, verify with `/test-device` or the `device-tester` agent.
 
 ## 4. After flashing
 

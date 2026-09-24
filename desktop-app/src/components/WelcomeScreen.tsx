@@ -8,13 +8,12 @@ export function WelcomeScreen({ onDone }: { onDone: () => void }) {
 				<div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-brand-600 text-white">
 					<Wifi size={20} />
 				</div>
-				<h1 className="text-xl font-bold text-stone-900">Keep Beak Buddy updated over WiFi</h1>
+				<h1 className="text-xl font-bold text-stone-900">Connect Beak Buddy to WiFi</h1>
 				<p className="mt-2 text-sm leading-relaxed text-stone-500">
-					Connecting Beak Buddy to your WiFi lets it receive firmware updates and ambient notifications
-					directly, without this app needing to stay open. For the Claude Code integration, keep this app
-					running — that's what keeps session status and usage stats on the device accurate. Your WiFi
-					password is sent to the device over this USB cable, never typed on the device itself or sent
-					anywhere else.
+					Connecting Beak Buddy to your WiFi lets it receive ambient notifications directly, without this
+					app needing to stay open. For the Claude Code integration, keep this app running — that's what
+					keeps session status and usage stats on the device accurate. Your WiFi password is sent to the
+					device over this USB cable, never typed on the device itself or sent anywhere else.
 				</p>
 				<div className="mt-6">
 					<WifiSetup onConnected={onDone} onSkip={onDone} />

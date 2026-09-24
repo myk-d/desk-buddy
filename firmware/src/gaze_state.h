@@ -39,6 +39,7 @@ float claudeFiveHourPct = -1;  // -1 = no data yet
 float claudeSevenDayPct = -1;
 long claudeFiveHourSecsLeft = -1;  // seconds until limit resets (the app computes this, not the firmware)
 long claudeSevenDaySecsLeft = -1;
+String claudeAccountEmail = ""; // from ~/.claude.json's oauthAccount.emailAddress — the app reads it, firmware just displays it
 
 // Generic ambient-status notification (/notify) — same auto-revert
 // pattern as the Claude "done" screen, just not tied to Claude Code at all.

@@ -5,11 +5,11 @@ A desktop gadget (ESP32-S3 + color TFT + NeoPixel) that reflects your workflow �
 Two parts, one repo:
 
 - **[`firmware/`](firmware)** — the C++ firmware running on the device itself.
-- **[`desktop-app/`](desktop-app)** — the Electron companion app that drives it, plus a small local productivity hub (Tasks/Calendar/Pomodoro).
+- **[`desktop-app/`](desktop-app)** — the Electron companion app that drives it, plus a Pomodoro timer.
 
 ## How it fits together
 
-The desktop app auto-connects to the device over USB and sends it simple text commands (`#ANIM:idle`, `#CLAUDE:working`, etc. — see [`firmware/CLAUDE.md`](firmware/CLAUDE.md) for the full protocol). Once you connect the device to WiFi (optional, from the app's Device page), it also hosts its own small HTTP server — so OTA firmware updates and ambient-status notifications keep working even when the desktop app is closed entirely. Claude Code stats are the exception: keep the desktop app running for those to stay accurate (see `desktop-app/CLAUDE.md`).
+The desktop app auto-connects to the device over USB and sends it simple text commands (`#ANIM:idle`, `#CLAUDE:working`, etc. — see [`firmware/CLAUDE.md`](firmware/CLAUDE.md) for the full protocol). Once you connect the device to WiFi (optional, from the app's Device page), it also hosts its own small HTTP server — so ambient-status notifications keep working even when the desktop app is closed entirely. Claude Code stats are the exception: keep the desktop app running for those to stay accurate (see `desktop-app/CLAUDE.md`). Firmware updates are a manual, developer-side step (see below) — the app has no update UI.
 
 ```
 ┌─────────────────┐   USB serial    ┌──────────────────┐
@@ -29,8 +29,10 @@ The desktop app auto-connects to the device over USB and sends it simple text co
 ```bash
 cd firmware
 ~/.platformio/penv/bin/pio run             # compile
-# flashing needs either the desktop app's "Update Firmware" button (OTA/USB)
-# or a manual redeploy — see firmware/CLAUDE.md, "Known hardware limitation"
+# flashing is manual — this board's USB-CDC driver doesn't support the
+# DTR/RTS reset `pio run --target upload` relies on, so hold BOOT while
+# plugging in (or briefly tap it) to force bootloader mode first; see
+# firmware/CLAUDE.md, "Known hardware limitation"
 ```
 
 **Desktop app**:
@@ -40,7 +42,7 @@ npm install
 npm run dev
 ```
 
-See [`desktop-app/README.md`](desktop-app/README.md) for the full development/build/release workflow.
+See [`desktop-app/README.md`](desktop-app/README.md) for the full development/build workflow.
 
 ## Docs
 
@@ -49,7 +51,7 @@ See [`desktop-app/README.md`](desktop-app/README.md) for the full development/bu
 
 ## Working on this repo with Claude Code
 
-This repo has project-specific subagents (`.claude/agents/`) and skills (`.claude/skills/`) for common workflows — compiling/typechecking, testing the physical device, flashing, adding a new WiFi endpoint or IPC channel, and cutting a release. Worth checking before reinventing one of these from scratch:
+This repo has project-specific subagents (`.claude/agents/`) and skills (`.claude/skills/`) for common workflows — compiling/typechecking, testing the physical device, flashing, adding a new WiFi endpoint or IPC channel. Worth checking before reinventing one of these from scratch:
 
 | Need to... | Use |
 |---|---|
@@ -61,4 +63,3 @@ This repo has project-specific subagents (`.claude/agents/`) and skills (`.claud
 | Add a new device HTTP endpoint | `/add-wifi-endpoint` |
 | Add a new IPC channel (app main ↔ renderer) | `/add-ipc-channel` |
 | Plan a new feature | `repo-planner` agent |
-| Cut a release | `release-cutter` agent |

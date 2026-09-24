@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react';
 import { WifiSetup } from './WifiSetup';
 import type { ClaudeUsage } from '../types';
 
-type UpdateInfo = { version: string; firmwareUrl: string } | null;
-
 function fmtResetsIn(unixSeconds: number | null): string | null {
 	if (!unixSeconds) return null;
 	const ms = unixSeconds * 1000 - Date.now();
@@ -45,65 +43,26 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 export function DevicePage({ connected, onReset }: { connected: boolean; onReset: () => void }) {
-	const [deviceVersion, setDeviceVersion] = useState<string | null>(null);
-	const [latest, setLatest] = useState<UpdateInfo>(null);
-	const [checking, setChecking] = useState(false);
-	const [flashing, setFlashing] = useState(false);
-	const [progress, setProgress] = useState<{ pct: number; status: string } | null>(null);
-	const [error, setError] = useState<string | null>(null);
-	const [done, setDone] = useState(false);
-
 	const [hooksSetup, setHooksSetup] = useState<boolean | null>(null);
 	const [settingUp, setSettingUp] = useState(false);
 	const [testing, setTesting] = useState(false);
 	const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 	const [claudeState, setClaudeState] = useState('idle');
 	const [claudeSource, setClaudeSource] = useState<string | null>(null);
+	const [claudeAccountEmail, setClaudeAccountEmail] = useState<string | null>(null);
 	const [claudeUsage, setClaudeUsage] = useState<ClaudeUsage>({
 		hasData: false, fiveHourPct: null, fiveHourResetsAt: null, sevenDayPct: null, sevenDayResetsAt: null,
 	});
 
 	useEffect(() => {
-		window.api.firmware.onProgress((pct, status) => {
-			setProgress({ pct, status });
-			if (pct === 100) {
-				setFlashing(false);
-				setDone(true);
-			}
-		});
-		window.api.firmware.onError((msg) => {
-			setError(msg);
-			setFlashing(false);
-		});
-		window.api.firmware.onVersion(setDeviceVersion);
 		window.api.claude.isSetup().then(setHooksSetup);
 		window.api.claude.getUsage().then(setClaudeUsage);
 		window.api.claude.getSource().then(setClaudeSource);
+		window.api.claude.getAccountEmail().then(setClaudeAccountEmail);
 		window.api.claude.onState(setClaudeState);
 		window.api.claude.onUsage(setClaudeUsage);
 		window.api.claude.onSource(setClaudeSource);
 	}, []);
-
-	useEffect(() => {
-		if (!connected) {
-			setDeviceVersion(null);
-			setDone(false);
-			return;
-		}
-		window.api.firmware.getDeviceVersion().then(setDeviceVersion);
-	}, [connected]);
-
-	function checkForUpdate() {
-		setChecking(true);
-		setError(null);
-		window.api.firmware.checkUpdate().then(info => {
-			setLatest(info);
-			setChecking(false);
-		}).catch(() => {
-			setError('Could not reach GitHub. Check your internet connection.');
-			setChecking(false);
-		});
-	}
 
 	async function setupHooks() {
 		setSettingUp(true);
@@ -120,93 +79,11 @@ export function DevicePage({ connected, onReset }: { connected: boolean; onReset
 		setTesting(false);
 	}
 
-	async function startFlash() {
-		setError(null);
-		setDone(false);
-		setProgress(null);
-		setFlashing(true);
-		try {
-			const newVersion = await window.api.firmware.flash();
-			setDeviceVersion(newVersion);
-		} catch (e: unknown) {
-			// error is already sent via firmware:error event
-			console.error('[firmware flash]', e);
-		}
-	}
-
-	const updateAvailable =
-		latest && deviceVersion && latest.version !== deviceVersion;
-
 	return (
 		<div className="flex h-full flex-col gap-6 overflow-x-hidden overflow-y-auto px-4 py-6 pb-20 sm:px-8 sm:py-8 md:pb-8">
 			<div>
 				<h1 className="text-2xl font-black tracking-tight text-stone-900">Device</h1>
-				<p className="mt-1 text-sm text-stone-500">Firmware management</p>
-			</div>
-
-			<div className="flex w-full max-w-130 min-w-0 flex-col gap-5 rounded-2xl border border-stone-200 bg-white p-7">
-				<Row label="Device firmware">
-					<span className="font-mono text-stone-800">
-						{deviceVersion ?? (connected ? 'Reading…' : '–')}
-					</span>
-				</Row>
-
-				<Row label="Latest available">
-					{latest ? (
-						<span className={`font-mono ${updateAvailable ? 'text-brand-600' : 'text-emerald-600'}`}>
-							{latest.version}
-							{updateAvailable && (
-								<span className="ml-2 text-xs text-brand-600">new</span>
-							)}
-						</span>
-					) : (
-						<button
-							onClick={checkForUpdate}
-							disabled={checking}
-							className="cursor-pointer rounded-md border border-stone-200 bg-transparent px-3.5 py-1.5 text-[13px] text-stone-500 hover:bg-stone-100"
-						>
-							{checking ? 'Checking…' : 'Check for update'}
-						</button>
-					)}
-				</Row>
-
-				{error && (
-					<div className="rounded-lg bg-red-50 px-3.5 py-2.5 text-[13px] text-red-600">
-						{error}
-					</div>
-				)}
-
-				{done && !error && (
-					<div className="rounded-lg bg-emerald-50 px-3.5 py-2.5 text-[13px] text-emerald-600">
-						Firmware updated successfully. Device is reconnecting…
-					</div>
-				)}
-
-				{flashing && progress && (
-					<div className="flex flex-col gap-2">
-						<div className="h-1.5 overflow-hidden rounded-full bg-stone-200">
-							<div
-								className="h-full rounded-full bg-brand-600 transition-[width] duration-300 ease-out"
-								style={{ width: `${progress.pct}%` }}
-							/>
-						</div>
-						<span className="text-xs text-stone-500">{progress.status}</span>
-					</div>
-				)}
-
-				{(updateAvailable || (latest && !updateAvailable)) && !flashing && (
-					<button
-						disabled={!updateAvailable || !connected || flashing}
-						onClick={startFlash}
-						className={`self-start rounded-lg px-6 py-2.5 text-sm font-semibold disabled:cursor-not-allowed ${
-							updateAvailable && connected
-								? 'cursor-pointer bg-brand-600 text-white hover:bg-brand-700'
-								: 'bg-stone-100 text-stone-400'
-						}`}
-					>
-						{updateAvailable ? 'Update Firmware' : 'Up to date'}
-					</button>
-				)}
+				<p className="mt-1 text-sm text-stone-500">Claude Code, WiFi, and reset</p>
 			</div>
 
 			{/* ── Claude Code integration ── */}
@@ -236,6 +113,11 @@ export function DevicePage({ connected, onReset }: { connected: boolean; onReset
 					</>
 				) : hooksSetup === true ? (
 					<>
+						{claudeAccountEmail && (
+							<Row label="Account">
+								<span className="text-stone-500">{claudeAccountEmail}</span>
+							</Row>
+						)}
 						<Row label="Status">
 							<span className="flex items-center gap-2">
 								<span
@@ -308,8 +190,8 @@ export function DevicePage({ connected, onReset }: { connected: boolean; onReset
 			<div>
 				<h2 className="text-xl font-bold text-stone-900">WiFi</h2>
 				<p className="mb-4 mt-1 text-sm text-stone-500">
-					Connect the device to your network for OTA firmware updates and ambient notifications. Keep this app
-					running for accurate Claude Code session/usage stats on the device.
+					Connect the device to your network for ambient notifications. Keep this app running for accurate
+					Claude Code session/usage stats on the device.
 				</p>
 			</div>
 
@@ -322,7 +204,7 @@ export function DevicePage({ connected, onReset }: { connected: boolean; onReset
 			<div>
 				<h2 className="text-xl font-bold text-stone-900">Reset</h2>
 				<p className="mb-4 mt-1 text-sm text-stone-500">
-					Restarts the device's firmware. Doesn't affect saved WiFi credentials or firmware version.
+					Restarts the device's firmware. Doesn't affect saved WiFi credentials.
 				</p>
 			</div>
 

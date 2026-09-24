@@ -39,7 +39,7 @@ Packets are `#COMMAND:args\n`. Current commands:
 | `#R` | Software restart (`ESP.restart()`) |
 | `#VERSION` | Replies `FIRMWARE:<version>` |
 | `#CLAUDE:<sub>` | Claude Code full-screen status: `idle` / `thinking` / `working` / `done` / `waiting` |
-| `#USAGE:<5hPct>,<5hSecs>,<7dPct>,<7dSecs>` | Session/weekly usage bars (app precomputes the countdown — firmware has no RTC of its own until NTP syncs) |
+| `#USAGE:<5hPct>,<5hSecs>,<7dPct>,<7dSecs>[,<email>]` | Session/weekly usage bars (app precomputes the countdown — firmware has no RTC of its own until NTP syncs); optional trailing email is shown above the cards and persists until a non-empty one arrives again |
 | `#TIME:<secondsLeft>:<total>` | Updates the Pomodoro timer/progress bar (only while in a Pomodoro state) |
 | `#WIFI:SCAN` | Async — replies `WIFI_NETWORKS:ssid,rssi;...` once the scan completes (non-blocking; `loop()` keeps ticking during the ~6-7s scan) |
 | `#WIFI:CONNECT:<token>:<ssid>,<password>` | Saves credentials + connects; replies `WIFI_STATUS:connected,<ip>` or `WIFI_STATUS:failed` |
@@ -67,6 +67,6 @@ State-changing HTTP handlers relay back over USB serial (`CLAUDE_RELAY:`, `USAGE
 
 ## Known hardware limitation
 
-This device's Linux USB-CDC driver doesn't support the DTR/RTS toggling `esptool`'s default bootloader-reset sequence relies on — `pio run --target upload` fails with "No serial data received." The desktop app's own flasher works around this with a 1200-baud-touch reset trick instead (see `../desktop-app/electron/flasher.ts`); OTA over WiFi (`/update`) sidesteps the problem entirely. Claude Code cannot flash the device directly in this environment — compiling is verifiable (`~/.platformio/penv/bin/pio run`, never the bare `pio`), flashing needs the user to trigger it via the app or manually.
+This device's Linux USB-CDC driver doesn't support the DTR/RTS toggling `esptool`'s default bootloader-reset sequence relies on — `pio run --target upload` fails with "No serial data received." The desktop app used to work around this with its own 1200-baud-touch reset trick (`electron/flasher.ts`), but that capability was deliberately removed from the app — **flashing is now fully manual**: hold the board's BOOT button (or tap it right as you plug in / while `pio run --target upload` is waiting) to force it into bootloader mode before the upload proceeds. Claude Code cannot flash the device directly in this environment either way — compiling is verifiable (`~/.platformio/penv/bin/pio run`, never the bare `pio`), flashing always needs the user physically present at the device.
 
 See `.claude/skills/flash-firmware/` and `.claude/skills/test-device/` (repo root) for the exact procedures, or delegate to the `firmware-checker`/`device-tester` agents.

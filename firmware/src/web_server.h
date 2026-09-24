@@ -12,7 +12,7 @@
 // Defined later in main.cpp — the HTTP handlers below lead to the same code
 // as the #CLAUDE:/#USAGE: serial commands.
 void applyClaudeState(int sub);
-void applyClaudeUsage(float fiveHourPct, long fiveHourSecs, float sevenDayPct, long sevenDaySecs);
+void applyClaudeUsage(float fiveHourPct, long fiveHourSecs, float sevenDayPct, long sevenDaySecs, const String &email);
 void applyNotify(const String &title, const String &message, uint16_t color, unsigned long durationMs);
 
 WebServer beakServer(80);
@@ -97,7 +97,8 @@ void handleClaudeUsageHttp()
   long fiveHourSecs = (long)jsonExtractNumber(body, "fiveHourSecsLeft", 0);
   float sevenDayPct = jsonExtractNumber(body, "sevenDayPct", -1);
   long sevenDaySecs = (long)jsonExtractNumber(body, "sevenDaySecsLeft", 0);
-  applyClaudeUsage(fiveHourPct, fiveHourSecs, sevenDayPct, sevenDaySecs);
+  String email = jsonExtractString(body, "email");
+  applyClaudeUsage(fiveHourPct, fiveHourSecs, sevenDayPct, sevenDaySecs, email);
 
   Serial.print("USAGE_RELAY:");
   Serial.print(fiveHourPct);

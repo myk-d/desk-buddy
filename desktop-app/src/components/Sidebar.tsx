@@ -1,10 +1,8 @@
-import { LayoutDashboard, ListTodo, CalendarDays, Timer, Cpu, Target } from 'lucide-react';
+import { LayoutDashboard, Timer, Cpu, Target } from 'lucide-react';
 import type { Page } from '../types';
 
 const NAV_ITEMS: [Page, string, typeof LayoutDashboard][] = [
 	['dashboard', 'Dashboard', LayoutDashboard],
-	['tasks', 'Tasks', ListTodo],
-	['calendar', 'Calendar', CalendarDays],
 	['pomodoro', 'Pomodoro', Timer],
 	['device', 'Device', Cpu],
 ];

@@ -8,11 +8,8 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from '
 import { homedir } from 'os';
 import { SerialPort } from 'serialport';
 import { fileURLToPath } from 'url';
-import electronUpdaterPkg from 'electron-updater';
-const { autoUpdater } = electronUpdaterPkg;
-import { triggerBootloaderReset, findEspPort, flashFirmware, otaFlash } from './flasher';
 import { createJsonStore, createJsonValueStore } from './store';
-import type { TaskList, Section, Task, Tag, CalendarEvent, PomodoroPreset, PomodoroSettings, PomodoroStats, WifiConfig, WifiNetwork, WifiConnectResult, WifiStatus } from '../src/types';
+import type { PomodoroPreset, PomodoroSettings, PomodoroStats, WifiConfig, WifiNetwork, WifiConnectResult, WifiStatus } from '../src/types';
 
 const DEFAULT_POMODORO_SETTINGS: PomodoroSettings = {
 	focusMinutes: 25,
@@ -49,8 +46,6 @@ let isConnecting = false;
 let isDeviceConnected = false;
 let lastCategory: Category | null = null;
 let isPomodoroActive = false;
-let isFlashing = false;
-let deviceFirmwareVersion: string | null = null;
 
 // The firmware sometimes writes a single logical line across two separate
 // Serial.print()/println() calls with a real gap between them (e.g.
@@ -99,6 +94,19 @@ let pendingWifiRequest: PendingWifiRequest | null = null;
 
 const CLAUDE_HOOKS_DIR = join(homedir(), '.claude', 'hooks');
 const CLAUDE_SETTINGS_PATH = join(homedir(), '.claude', 'settings.json');
+// Claude Code's own top-level config — separate from .credentials.json (the
+// OAuth token) — stores account info under oauthAccount, including the
+// email of whichever account is currently logged in.
+const CLAUDE_CONFIG_PATH = join(homedir(), '.claude.json');
+
+function readClaudeAccountEmail(): string | null {
+	try {
+		const config = JSON.parse(readFileSync(CLAUDE_CONFIG_PATH, 'utf8'));
+		return config?.oauthAccount?.emailAddress ?? null;
+	} catch {
+		return null;
+	}
+}
 
 interface HookTarget {
 	host: string;
@@ -159,11 +167,18 @@ function buildStateHookCommand(target: HookTarget, state: string): string {
 // Fed the real rate_limits (five_hour/seven_day used_percentage + resetsAt) by
 // Claude Code on every statusLine render; POSTs them to the target server and
 // still prints a normal status line so the terminal UI keeps working.
-function buildStatuslineHook(target: HookTarget): string {
+function buildStatuslineHook(target: HookTarget, email: string | null): string {
 	const tokenHeader = target.token ? `'X-Beak-Token': '${target.token}', ` : '';
+	// Baked in at generation time, same as the token above — this script runs
+	// standalone (no app process behind it once WiFi is configured), so it
+	// can't read ~/.claude.json itself at post time without re-parsing JSON
+	// on every statusLine render for no benefit; the email essentially never
+	// changes between hook regenerations (WiFi connect/forget, manual setup).
+	const emailLiteral = JSON.stringify(email ?? '');
 	return `#!/usr/bin/env node
 'use strict';
 const http = require('http');
+const EMAIL = ${emailLiteral};
 
 let raw = '';
 process.stdin.on('data', chunk => { raw += chunk; });
@@ -198,6 +213,7 @@ process.stdin.on('end', () => {
             sevenDayPct: sevenDay?.used_percentage ?? null,
             sevenDayResetsAt: sevenDay?.resets_at ?? null,
             sevenDaySecsLeft: secsLeft(sevenDay?.resets_at),
+            email: EMAIL,
         });
         const req = http.request({
             hostname: '${target.host}', port: ${target.port}, path: '/claude-usage', method: 'POST',
@@ -229,7 +245,7 @@ function isClaudeHooksSetup(): boolean {
 function setupClaudeHooks(): void {
 	mkdirSync(CLAUDE_HOOKS_DIR, { recursive: true });
 	const target = currentHookTarget();
-	writeFileSync(join(CLAUDE_HOOKS_DIR, 'statusline.js'), buildStatuslineHook(target), { mode: 0o755 });
+	writeFileSync(join(CLAUDE_HOOKS_DIR, 'statusline.js'), buildStatuslineHook(target, readClaudeAccountEmail()), { mode: 0o755 });
 	// Older formats from earlier iterations of this fix (bash, then node,
 	// then a cmd-wrapped batch file) — remove so they don't linger as dead
 	// files while debugging.
@@ -428,6 +444,7 @@ function handleClaudeUsage(usage: Partial<ClaudeUsage>) {
 		resetsAt ? Math.max(0, Math.round(resetsAt - Date.now() / 1000)) : 0;
 	const fiveHourSecsLeft = secsUntil(claudeUsage.fiveHourResetsAt);
 	const sevenDaySecsLeft = secsUntil(claudeUsage.sevenDayResetsAt);
+	const email = readClaudeAccountEmail() ?? '';
 
 	// This is the account-usage-API poll's only path to the device — unlike
 	// the state hooks, it runs from this app's own main process rather than
@@ -444,6 +461,7 @@ function handleClaudeUsage(usage: Partial<ClaudeUsage>) {
 			fiveHourSecsLeft,
 			sevenDayPct: Math.round(claudeUsage.sevenDayPct),
 			sevenDaySecsLeft,
+			email,
 		});
 		const req = http.request({
 			hostname: 'beak-buddy.local', port: 80, path: '/claude-usage', method: 'POST',
@@ -456,7 +474,7 @@ function handleClaudeUsage(usage: Partial<ClaudeUsage>) {
 	}
 
 	if (isDeviceConnected && activePort?.isOpen) {
-		activePort.write(`#USAGE:${Math.round(claudeUsage.fiveHourPct)},${fiveHourSecsLeft},${Math.round(claudeUsage.sevenDayPct)},${sevenDaySecsLeft}\n`);
+		activePort.write(`#USAGE:${Math.round(claudeUsage.fiveHourPct)},${fiveHourSecsLeft},${Math.round(claudeUsage.sevenDayPct)},${sevenDaySecsLeft},${email}\n`);
 	}
 }
 
@@ -555,11 +573,6 @@ function createWindow(): void {
 		mainWindow?.show();
 		startAutoConnectScanner();
 		startWindowTracker();
-		if (app.isPackaged) {
-			autoUpdater.checkForUpdates().catch((err) =>
-				console.warn('[updater] check failed:', err.message),
-			);
-		}
 	});
 
 	// Clicking the window's close button hides it instead of quitting the app —
@@ -585,18 +598,13 @@ function notifyDisconnected() {
 	if (!isDeviceConnected) return;
 	isDeviceConnected = false;
 	lastCategory = null;
-	deviceFirmwareVersion = null;
 	mainWindow?.webContents.send('serial:status', 'disconnected');
 }
 
 function startAutoConnectScanner() {
-	// Idempotent — the OTA flash path (firmware:flash) can reach the
-	// finally-block call to this without ever having cleared a still-running
-	// timer (USB teardown is skipped entirely when OTA succeeds), which would
-	// otherwise leak a duplicate interval.
 	if (autoConnectTimer) clearInterval(autoConnectTimer);
 	autoConnectTimer = setInterval(async () => {
-		if ((activePort && activePort.isOpen) || isConnecting || isFlashing) return;
+		if ((activePort && activePort.isOpen) || isConnecting) return;
 
 		try {
 			const ports = await SerialPort.list();
@@ -641,12 +649,6 @@ function startAutoConnectScanner() {
 
 						for (const line of lines) {
 							const str = line + '\n';
-							const fwMatch = str.match(/FIRMWARE:([^\r\n]+)/);
-							if (fwMatch) {
-								deviceFirmwareVersion = fwMatch[1].trim();
-								mainWindow?.webContents.send('firmware:version', deviceFirmwareVersion);
-							}
-
 							const networksMatch = str.match(/WIFI_NETWORKS:([^\r\n]*)/);
 							if (networksMatch) {
 								const networks: WifiNetwork[] = networksMatch[1]
@@ -814,27 +816,18 @@ function registerValueIpc<T>(namespace: string, store: ReturnType<typeof createJ
 	ipcMain.handle(`${namespace}:set`, (_, value: T) => store.set(value));
 }
 
-// The source app seeded a default list/section/presets on first Firebase
-// login (see its lib/userInitializer.ts) — there's no such event here, so
-// this runs once on first launch instead, gated by a flag file so it never
-// re-seeds after the user deletes everything on purpose.
-function ensureSeeded(
-	listsStore: ReturnType<typeof createJsonStore<TaskList>>,
-	sectionsStore: ReturnType<typeof createJsonStore<Section>>,
-	presetsStore: ReturnType<typeof createJsonStore<PomodoroPreset>>,
-) {
+// The source app seeded a default preset set on first Firebase login (see
+// its lib/userInitializer.ts) — there's no such event here, so this runs
+// once on first launch instead, gated by a flag file so it never re-seeds
+// after the user deletes everything on purpose.
+function ensureSeeded(presetsStore: ReturnType<typeof createJsonStore<PomodoroPreset>>) {
 	const seededFlag = createJsonValueStore<boolean>('seeded.json', false);
 	if (seededFlag.get()) return;
-	if (listsStore.list().length > 0 || presetsStore.list().length > 0) {
+	if (presetsStore.list().length > 0) {
 		seededFlag.set(true);
 		return;
 	}
 
-	const listId = randomUUID();
-	const sectionId = randomUUID();
-
-	listsStore.create({ id: listId, name: 'My Tasks', isDefault: true, groupBy: 'sequence', sortBy: 'sequence' });
-	sectionsStore.create({ id: sectionId, listId, name: 'Tasks', order: 0 });
 	presetsStore.create({ id: randomUUID(), name: 'Classic', focusMinutes: 25, shortBreakMinutes: 5, longBreakMinutes: 15, sessionsBeforeLongBreak: 4, autoStartNext: true });
 	presetsStore.create({ id: randomUUID(), name: 'Deep Work', focusMinutes: 50, shortBreakMinutes: 10, longBreakMinutes: 20, sessionsBeforeLongBreak: 3, autoStartNext: true });
 
@@ -971,16 +964,9 @@ function setLaunchAtLogin(enabled: boolean): void {
 }
 
 app.whenReady().then(() => {
-	const listsStore = createJsonStore<TaskList>('lists.json');
-	const sectionsStore = createJsonStore<Section>('sections.json');
 	const presetsStore = createJsonStore<PomodoroPreset>('pomodoroPresets.json');
-	ensureSeeded(listsStore, sectionsStore, presetsStore);
+	ensureSeeded(presetsStore);
 
-	registerCrudIpc('lists', listsStore);
-	registerCrudIpc('sections', sectionsStore);
-	registerCrudIpc('tasks', createJsonStore<Task>('tasks.json'));
-	registerCrudIpc('tags', createJsonStore<Tag>('tags.json'));
-	registerCrudIpc('events', createJsonStore<CalendarEvent>('events.json'));
 	registerCrudIpc('pomodoroPresets', presetsStore);
 
 	registerValueIpc('pomodoroSettings', createJsonValueStore<PomodoroSettings>('pomodoroSettings.json', DEFAULT_POMODORO_SETTINGS));
@@ -1033,139 +1019,11 @@ app.on('before-quit', () => {
 	isQuitting = true;
 });
 
-autoUpdater.on('update-downloaded', () => {
-	mainWindow?.webContents.send('update:ready');
-});
-
-ipcMain.on('update:install', () => autoUpdater.quitAndInstall());
-
-// ── GitHub release helpers ────────────────────────────────────────────────────
-
-function httpsGet(url: string): Promise<string> {
-	return new Promise((resolve, reject) => {
-		const req = https.get(
-			url,
-			{ headers: { 'User-Agent': 'beak-buddy-hub', Accept: 'application/vnd.github.v3+json' } },
-			(res) => {
-				if (res.statusCode === 301 || res.statusCode === 302) {
-					httpsGet(res.headers.location!).then(resolve, reject);
-					return;
-				}
-				let body = '';
-				res.on('data', (c: string) => (body += c));
-				res.on('end', () => resolve(body));
-				res.on('error', reject);
-			},
-		);
-		req.on('error', reject);
-		req.setTimeout(10000, () => { req.destroy(); reject(new Error('Request timeout')); });
-	});
-}
-
-function httpsBinary(url: string): Promise<Buffer> {
-	return new Promise((resolve, reject) => {
-		const req = https.get(url, { headers: { 'User-Agent': 'beak-buddy-hub' } }, (res) => {
-			if (res.statusCode === 301 || res.statusCode === 302) {
-				httpsBinary(res.headers.location!).then(resolve, reject);
-				return;
-			}
-			const chunks: Buffer[] = [];
-			res.on('data', (c: Buffer) => chunks.push(c));
-			res.on('end', () => resolve(Buffer.concat(chunks)));
-			res.on('error', reject);
-		});
-		req.on('error', reject);
-		req.setTimeout(60000, () => { req.destroy(); reject(new Error('Download timeout')); });
-	});
-}
-
-async function fetchLatestRelease(): Promise<{ version: string; firmwareUrl: string } | null> {
-	try {
-		const body = await httpsGet('https://api.github.com/repos/myk-d/desk-buddy/releases/latest');
-		const release = JSON.parse(body);
-		const version = release.tag_name?.replace(/^v/, '');
-		const asset = release.assets?.find(
-			(a: { name: string; browser_download_url: string }) => a.name === 'firmware.bin',
-		);
-		if (!version || !asset) return null;
-		return { version, firmwareUrl: asset.browser_download_url };
-	} catch {
-		return null;
-	}
-}
-
-// ── Firmware IPC ──────────────────────────────────────────────────────────────
-
-ipcMain.handle('firmware:getDeviceVersion', () => deviceFirmwareVersion);
-
-ipcMain.handle('firmware:checkUpdate', () => fetchLatestRelease());
-
-ipcMain.handle('firmware:flash', async () => {
-	if (isFlashing) throw new Error('Already flashing');
-
-	isFlashing = true;
-
-	try {
-		mainWindow?.webContents.send('firmware:progress', 1, 'Fetching release info...');
-		const release = await fetchLatestRelease();
-		if (!release) throw new Error('No firmware.bin found in latest GitHub release.');
-
-		mainWindow?.webContents.send('firmware:progress', 2, 'Downloading firmware...');
-		const bin = await httpsBinary(release.firmwareUrl);
-
-		// Prefer OTA over WiFi when available — sidesteps the USB
-		// bootloader-reset dance entirely (this device's Linux USB-CDC driver
-		// doesn't support the DTR/RTS toggling esptool needs, forcing the
-		// 1200-baud-touch workaround below). Only falls back to USB if WiFi
-		// isn't configured or the OTA attempt itself fails.
-		const wifi = wifiStore?.get() ?? DEFAULT_WIFI_CONFIG;
-		if (wifi.configured && wifi.token) {
-			try {
-				await otaFlash('beak-buddy.local', wifi.token, Buffer.from(bin), (pct, status) => {
-					mainWindow?.webContents.send('firmware:progress', pct, status);
-				});
-				return release.version;
-			} catch (otaErr: unknown) {
-				console.warn('[firmware] OTA flash failed, falling back to USB:', otaErr instanceof Error ? otaErr.message : otaErr);
-			}
-		}
-
-		// USB fallback — only tear down the live serial connection now that
-		// we actually need it, not preemptively before knowing OTA would work.
-		const portPath = activePort?.path ?? null;
-		if (autoConnectTimer) { clearInterval(autoConnectTimer); autoConnectTimer = null; }
-		if (activePort?.isOpen) {
-			await new Promise<void>(res => activePort!.close(() => res()));
-			activePort = null;
-		}
-		notifyDisconnected();
-
-		mainWindow?.webContents.send('firmware:progress', 4, 'Triggering bootloader reset...');
-		if (portPath) await triggerBootloaderReset(portPath);
-
-		mainWindow?.webContents.send('firmware:progress', 5, 'Waiting for bootloader...');
-		const bootPath = await findEspPort();
-
-		await flashFirmware(bootPath, new Uint8Array(bin), (pct, status) => {
-			mainWindow?.webContents.send('firmware:progress', pct, status);
-		});
-
-		mainWindow?.webContents.send('firmware:progress', 100, `Firmware ${release.version} installed!`);
-		return release.version;
-	} catch (err: unknown) {
-		const msg = err instanceof Error ? err.message : String(err);
-		mainWindow?.webContents.send('firmware:error', msg);
-		throw err;
-	} finally {
-		isFlashing = false;
-		startAutoConnectScanner();
-	}
-});
-
 ipcMain.handle('claude:isSetup', () => isClaudeHooksSetup());
 ipcMain.handle('claude:setup', () => { setupClaudeHooks(); return true; });
 ipcMain.handle('claude:getUsage', () => ({ ...claudeUsage }));
 ipcMain.handle('claude:getSource', () => claudeCodeSource);
+ipcMain.handle('claude:getAccountEmail', () => readClaudeAccountEmail());
 
 // Fires a synthetic "working" state through the exact same path a real
 // Claude Code hook would use (local relay or straight to the device over

@@ -29,37 +29,18 @@ contextBridge.exposeInMainWorld('api', {
 	onModeChange: (callback: (mode: string) => void) => {
 		ipcRenderer.on('tracker:mode', (_, mode) => callback(mode));
 	},
-	onUpdateReady: (callback: () => void) => {
-		ipcRenderer.on('update:ready', () => callback());
-	},
-	installUpdate: () => ipcRenderer.send('update:install'),
 	claude: {
 		isSetup: () => ipcRenderer.invoke('claude:isSetup'),
 		setup: () => ipcRenderer.invoke('claude:setup'),
 		testIntegration: () => ipcRenderer.invoke('claude:testIntegration'),
 		getUsage: () => ipcRenderer.invoke('claude:getUsage'),
 		getSource: () => ipcRenderer.invoke('claude:getSource'),
+		getAccountEmail: () => ipcRenderer.invoke('claude:getAccountEmail'),
 		onState: (cb: (state: string) => void) => ipcRenderer.on('claude:state', (_, s) => cb(s)),
 		onUsage: (cb: (u: unknown) => void) =>
 			ipcRenderer.on('claude:usage', (_, u) => cb(u)),
 		onSource: (cb: (source: string) => void) => ipcRenderer.on('claude:source', (_, s) => cb(s)),
 	},
-	firmware: {
-		getDeviceVersion: () => ipcRenderer.invoke('firmware:getDeviceVersion'),
-		checkUpdate: () => ipcRenderer.invoke('firmware:checkUpdate'),
-		flash: () => ipcRenderer.invoke('firmware:flash'),
-		onProgress: (cb: (pct: number, status: string) => void) =>
-			ipcRenderer.on('firmware:progress', (_, pct, status) => cb(pct, status)),
-		onError: (cb: (msg: string) => void) =>
-			ipcRenderer.on('firmware:error', (_, msg) => cb(msg)),
-		onVersion: (cb: (version: string | null) => void) =>
-			ipcRenderer.on('firmware:version', (_, version) => cb(version)),
-	},
-	lists: crudApi('lists'),
-	sections: crudApi('sections'),
-	tasks: crudApi('tasks'),
-	tags: crudApi('tags'),
-	events: crudApi('events'),
 	pomodoroPresets: crudApi('pomodoroPresets'),
 	pomodoroSettings: valueApi('pomodoroSettings'),
 	pomodoroStats: valueApi('pomodoroStats'),

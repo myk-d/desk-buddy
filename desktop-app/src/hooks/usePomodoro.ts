@@ -51,11 +51,6 @@ export function usePomodoro(sendPacket: (packet: string) => void) {
 	const [started, setStarted] = useState(false);
 	const [sessionsInCycle, setSessionsInCycle] = useState(0);
 	const [flashKey, setFlashKey] = useState(0);
-	const [activeTaskId, setActiveTask] = useState<string | null>(null);
-	// Tracks whether at least one focus session has completed during the
-	// current run — gates linked-task completion in reset() so stopping
-	// immediately after starting doesn't mark the task done for no work done.
-	const [completedAnySession, setCompletedAnySession] = useState(false);
 	const [presets, setPresets] = useRemoteCollection<PomodoroPreset>(window.api.pomodoroPresets);
 	const [activePresetId, setActivePresetId] = useState<string | null>(null);
 	const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -77,7 +72,6 @@ export function usePomodoro(sendPacket: (packet: string) => void) {
 					totalFocusMinutes: normalized.totalFocusMinutes + settings.focusMinutes,
 				};
 			});
-			setCompletedAnySession(true);
 			const nextCount = sessionsInCycle + 1;
 			setSessionsInCycle(nextCount);
 			const nextPhase: PomodoroPhase = nextCount % settings.sessionsBeforeLongBreak === 0 ? 'longBreak' : 'shortBreak';
@@ -127,13 +121,6 @@ export function usePomodoro(sendPacket: (packet: string) => void) {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [rawTimeLeft, isActive, phase]);
 
-	// `startForTask` is consumed far from the Pomodoro page itself (every
-	// TaskRow, TaskDetailPanel — via a narrower context) specifically so those
-	// components don't re-render every second the timer ticks. That only
-	// works if `startForTask` (and `start`, which it calls) is referentially
-	// stable across renders — reading `timeLeft`/`phase` through refs instead
-	// of closing over them directly lets `start` stay a stable `useCallback`
-	// with an empty dep array while still using the latest values.
 	const timeLeftRef = useRef(timeLeft);
 	useEffect(() => {
 		timeLeftRef.current = timeLeft;
@@ -156,23 +143,8 @@ export function usePomodoro(sendPacket: (packet: string) => void) {
 		setStarted(false);
 		window.api.setPomodoroActive(false);
 		sendRef.current('#ANIM:idle\n');
-		if (completedAnySession) {
-			const preset = presets.find((p) => p.id === activePresetId);
-			if (preset?.linkedTaskId) {
-				void window.api.tasks.update(preset.linkedTaskId, { completed: true });
-			}
-		}
-		setActiveTask(null);
 		setActivePresetId(null);
-		setCompletedAnySession(false);
 	};
-	const startForTask = useCallback(
-		(taskId: string) => {
-			setActiveTask(taskId);
-			start();
-		},
-		[start]
-	);
 
 	// Applies a preset's durations directly rather than going through start()
 	// (which derives `timeLeft` from the *current* `settings`/`phase` closure —
@@ -195,7 +167,6 @@ export function usePomodoro(sendPacket: (packet: string) => void) {
 		setStarted(true);
 		setIsActive(true);
 		setActivePresetId(presetId);
-		setCompletedAnySession(false);
 		window.api.setPomodoroActive(true);
 		sendRef.current(ANIM_FOR_PHASE.focus);
 	};
@@ -243,8 +214,6 @@ export function usePomodoro(sendPacket: (packet: string) => void) {
 		isActive,
 		sessionsInCycle,
 		flashKey,
-		activeTaskId,
-		setActiveTask,
 		presets,
 		activePresetId,
 		runPreset,
@@ -252,7 +221,6 @@ export function usePomodoro(sendPacket: (packet: string) => void) {
 		updatePreset,
 		deletePreset,
 		start,
-		startForTask,
 		pause,
 		toggle,
 		reset,

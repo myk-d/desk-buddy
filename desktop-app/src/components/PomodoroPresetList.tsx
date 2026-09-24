@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { Check, Pencil, Play, Plus, Trash2, X } from 'lucide-react';
 import { useConfirm } from '../context/ConfirmContext';
-import { useTaskStoreContext } from '../context/TaskStoreContext';
 import { Switch } from './ui/Switch';
 import { inputClass } from '../lib/ui';
-import type { PomodoroPreset, Task } from '../types';
+import type { PomodoroPreset } from '../types';
 
 interface PomodoroPresetListProps {
 	presets: PomodoroPreset[];
@@ -23,7 +22,6 @@ interface PresetFormValue {
 	longBreakMinutes: number;
 	sessionsBeforeLongBreak: number;
 	autoStartNext: boolean;
-	linkedTaskId: string | null;
 }
 
 const EMPTY_FORM: PresetFormValue = {
@@ -33,7 +31,6 @@ const EMPTY_FORM: PresetFormValue = {
 	longBreakMinutes: 15,
 	sessionsBeforeLongBreak: 4,
 	autoStartNext: true,
-	linkedTaskId: null,
 };
 
 function PresetForm({
@@ -41,15 +38,13 @@ function PresetForm({
 	onChange,
 	onSave,
 	onCancel,
-	tasks,
 }: {
 	value: PresetFormValue;
 	onChange: (v: PresetFormValue) => void;
 	onSave: () => void;
 	onCancel: () => void;
-	tasks: Task[];
 }) {
-	const numberField = (label: string, key: keyof Omit<PresetFormValue, 'name' | 'autoStartNext' | 'linkedTaskId'>, min: number, max: number) => (
+	const numberField = (label: string, key: keyof Omit<PresetFormValue, 'name' | 'autoStartNext'>, min: number, max: number) => (
 		<label className="flex items-center justify-between gap-2 text-xs text-stone-500">
 			{label}
 			<input
@@ -62,8 +57,6 @@ function PresetForm({
 			/>
 		</label>
 	);
-
-	const incompleteTasks = tasks.filter((t) => !t.completed);
 
 	return (
 		<div className="flex flex-col gap-2 rounded-xl border border-stone-200 bg-stone-50 p-3">
@@ -80,21 +73,6 @@ function PresetForm({
 				{numberField('Long break, min', 'longBreakMinutes', 1, 60)}
 				{numberField('Sessions before long', 'sessionsBeforeLongBreak', 1, 12)}
 			</div>
-			<label className="flex items-center justify-between gap-2 text-xs text-stone-500">
-				Linked task
-				<select
-					value={value.linkedTaskId ?? ''}
-					onChange={(e) => onChange({ ...value, linkedTaskId: e.target.value || null })}
-					className={`${inputClass} w-40 py-1 text-xs`}
-				>
-					<option value="">None</option>
-					{incompleteTasks.map((task) => (
-						<option key={task.id} value={task.id}>
-							{task.text}
-						</option>
-					))}
-				</select>
-			</label>
 			<div className="flex items-center justify-between gap-2 border-t border-stone-200 pt-2 text-xs text-stone-500">
 				Auto-start next phase
 				<Switch checked={value.autoStartNext} onChange={(v) => onChange({ ...value, autoStartNext: v })} />
@@ -124,7 +102,6 @@ export function PomodoroPresetList({
 	onUpdate,
 	onDelete,
 }: PomodoroPresetListProps) {
-	const { tasks } = useTaskStoreContext();
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [isAdding, setIsAdding] = useState(false);
 	const [form, setForm] = useState<PresetFormValue>(EMPTY_FORM);
@@ -147,7 +124,6 @@ export function PomodoroPresetList({
 			longBreakMinutes: preset.longBreakMinutes,
 			sessionsBeforeLongBreak: preset.sessionsBeforeLongBreak,
 			autoStartNext: preset.autoStartNext,
-			linkedTaskId: preset.linkedTaskId ?? null,
 		});
 	};
 
@@ -183,11 +159,11 @@ export function PomodoroPresetList({
 			</div>
 
 			<div className="flex flex-col gap-2">
-				{isAdding && <PresetForm value={form} onChange={setForm} onSave={saveEdit} onCancel={() => setIsAdding(false)} tasks={tasks} />}
+				{isAdding && <PresetForm value={form} onChange={setForm} onSave={saveEdit} onCancel={() => setIsAdding(false)} />}
 
 				{presets.map((preset) =>
 					editingId === preset.id ? (
-						<PresetForm key={preset.id} value={form} onChange={setForm} onSave={saveEdit} onCancel={() => setEditingId(null)} tasks={tasks} />
+						<PresetForm key={preset.id} value={form} onChange={setForm} onSave={saveEdit} onCancel={() => setEditingId(null)} />
 					) : (
 						<div
 							key={preset.id}

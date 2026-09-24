@@ -1,10 +1,11 @@
 #pragma once
 
-// Claude Code — a thin colored status strip at the top + two stat cards
-// (SESSION 5h / WEEKLY 7d), styled as rounded stat cards. The strip is only
-// redrawn when the sub-state changes (drawClaudeScreen); the cards update
-// separately (drawClaudeUsageBars) so #USAGE: doesn't redraw the whole
-// screen every time.
+// Claude Code — a thin colored status strip at the top (CLAUDE CODE / account
+// email / sub-state, all on one line) + two ring-style stat cards side by
+// side (SESSION 5h / WEEKLY 7d). The strip's state/label are only redrawn
+// when the sub-state changes (drawClaudeScreen); the email band within it and
+// the two cards update separately (drawClaudeUsageBars) so #USAGE: doesn't
+// redraw the whole screen every time.
 
 void formatResetsIn(char *buf, size_t bufSize, long secs)
 {
@@ -24,44 +25,143 @@ void formatResetsIn(char *buf, size_t bufSize, long secs)
     snprintf(buf, bufSize, "resets in %ldm", mins);
 }
 
-void drawClaudeCard(int x, int y, int w, int h, const char *label, float pct, uint16_t barColor, long secsLeft)
+// Session-ring/NeoPixel severity grading — same thresholds as the desktop
+// app's pctColor() (DevicePage.tsx). 0=ok (<70%), 1=medium (70-89%), 2=high
+// (>=90%). Only ever fed claudeFiveHourPct — the weekly ring/color is fixed.
+int claudeUsageSeverity(float pct)
+{
+  if (pct >= 90)
+    return 2;
+  if (pct >= 70)
+    return 1;
+  return 0;
+}
+
+uint16_t claudeSeverityRingColor(int severity)
+{
+  switch (severity)
+  {
+  case 2:
+    return CLAUDE_PCT_HIGH_COLOR;
+  case 1:
+    return CLAUDE_PCT_MED_COLOR;
+  default:
+    return CLAUDE_PCT_OK_COLOR;
+  }
+}
+
+void claudeSeverityRGB(int severity, uint8_t &r, uint8_t &g, uint8_t &b)
+{
+  switch (severity)
+  {
+  case 2:
+    r = 248; g = 113; b = 113; break; // red-400
+  case 1:
+    r = 251; g = 191; b = 36; break; // amber-400
+  default:
+    r = 34; g = 197; b = 94; break; // green-500
+  }
+}
+
+// Matches the switch in drawClaudeScreen() — kept separate (rather than
+// having drawClaudeScreen call this) so that one stays a simple, obviously
+// paired stripColor+label switch, while this gets reused by the email-only
+// partial redraw below, which never needs the label.
+uint16_t claudeStripColor()
+{
+  switch (claudeSubState)
+  {
+  case 1:
+    return CLAUDE_WORKING_COLOR;
+  case 2:
+    return CLAUDE_DONE_COLOR;
+  case 3:
+    return CLAUDE_WAITING_COLOR;
+  case 4:
+    return CLAUDE_THINKING_COLOR;
+  default:
+    return CLAUDE_NEUTRAL_COLOR;
+  }
+}
+
+// Redraws just the middle band of the top strip (account email), without
+// touching the "CLAUDE CODE" label on the left or the sub-state label on the
+// right — called both from the full-screen paint (drawClaudeScreen) and from
+// drawClaudeUsageBars() (email rides along on every #USAGE update, but
+// changes rarely — redrawing this small band each time is cheap and avoids
+// a stale email lingering after a #USAGE arrives with a newer one).
+void drawClaudeStripEmail()
+{
+  uint16_t stripColor = claudeStripColor();
+  const int bandX = 85, bandW = 153; // x 85..238 — clear of "CLAUDE CODE" (ends ~76) and the longest sub-state label, "NEEDS INPUT" (starts ~244)
+  lcd.fillRect(bandX, 0, bandW, 30, stripColor);
+  lcd.setTextSize(1);
+  lcd.setTextColor(0x0000, stripColor); // black text — more legible on this small screen than white
+  int emailW = claudeAccountEmail.length() * 6;
+  lcd.setCursor(160 - emailW / 2, 11);
+  lcd.print(claudeAccountEmail);
+}
+
+// Circular progress ring: track (full circle) + a clockwise-filled arc
+// starting at 12 o'clock (angle 270 in LovyanGFX's 0=east/clockwise scheme),
+// punched through the middle with the card's own background so it reads as
+// a ring rather than a filled disc.
+void drawProgressRingTrack(int cx, int cy, int rOuter, int rInner)
+{
+  lcd.fillCircle(cx, cy, rOuter, CLAUDE_TRACK_COLOR);
+  lcd.fillCircle(cx, cy, rInner, CLAUDE_CARD_BG);
+}
+
+void drawClaudeRingCard(int x, int y, int w, int h, const char *label, float pct, uint16_t ringColor, long secsLeft)
 {
   lcd.fillRoundRect(x, y, w, h, 10, CLAUDE_CARD_BG);
 
-  lcd.setTextSize(1);
+  // Label pinned near the top edge of the card (not centered with the ring
+  // below it) — same reasoning applies to the reset text pinned near the
+  // bottom, so the ring gets to be the visually dominant element in between.
+  const float labelSize = 1.5f;
+  lcd.setTextSize(labelSize);
   lcd.setTextColor(CLAUDE_TEXT_MUTED, CLAUDE_CARD_BG);
-  lcd.setCursor(x + 14, y + 12);
+  int labelW = (int)(strlen(label) * 6 * labelSize);
+  lcd.setCursor(x + (w - labelW) / 2, y + 8);
   lcd.print(label);
+
+  const int cx = x + w / 2, rOuter = 58, rInner = 48;
+  const int cy = y + 32 + rOuter; // below the label + a gap
+
+  drawProgressRingTrack(cx, cy, rOuter, rInner);
+  if (pct >= 0)
+  {
+    float frac = pct / 100.0f;
+    if (frac > 1)
+      frac = 1;
+    if (frac < 0.02f)
+      frac = 0.02f; // keep a visible sliver even at ~0%, same as the old linear bar's min-dot
+    lcd.fillArc(cx, cy, rOuter, rInner, 270, 270 + frac * 360, ringColor);
+  }
 
   char pctBuf[8];
   if (pct >= 0)
     snprintf(pctBuf, sizeof(pctBuf), "%d%%", (int)(pct + 0.5f));
   else
     snprintf(pctBuf, sizeof(pctBuf), "--");
-  lcd.setTextSize(3);
+  // 3.5, not 4 — at size 4 "100%" (the one 4-char value) would span the full
+  // 96px inner-circle diameter with zero margin and risk clipping into the
+  // ring; 3.5 keeps a few px of breathing room even for that case.
+  const float pctSize = 3.5f;
+  lcd.setTextSize(pctSize);
   lcd.setTextColor(pct >= 0 ? 0xFFFF : CLAUDE_TEXT_MUTED, CLAUDE_CARD_BG);
-  lcd.setCursor(x + 14, y + 28);
+  int pctW = (int)(strlen(pctBuf) * 6 * pctSize);
+  lcd.setCursor(cx - pctW / 2, cy - (int)(8 * pctSize) / 2);
   lcd.print(pctBuf);
-
-  const int barX = x + 14, barW = w - 28, barH = 8, barY = y + h - 32;
-  lcd.fillRoundRect(barX, barY, barW, barH, barH / 2, CLAUDE_TRACK_COLOR);
-  if (pct >= 0)
-  {
-    float frac = pct / 100.0f;
-    if (frac > 1)
-      frac = 1;
-    if (frac < 0.04f)
-      frac = 0.04f; // keep a visible dot even at ~0%
-    int fillW = (int)(barW * frac);
-    lcd.fillRoundRect(barX, barY, fillW, barH, barH / 2, barColor);
-    lcd.fillCircle(barX + fillW, barY + barH / 2, 6, barColor);
-  }
 
   char resetsBuf[32];
   formatResetsIn(resetsBuf, sizeof(resetsBuf), secsLeft);
-  lcd.setTextSize(1);
+  const float resetSize = 1.3f;
+  lcd.setTextSize(resetSize);
   lcd.setTextColor(CLAUDE_TEXT_MUTED, CLAUDE_CARD_BG);
-  lcd.setCursor(x + 14, y + h - 14);
+  int resetW = (int)(strlen(resetsBuf) * 6 * resetSize);
+  lcd.setCursor(cx - resetW / 2, y + h - 8 - (int)(8 * resetSize));
   lcd.print(resetsBuf);
 }
 
@@ -70,34 +170,32 @@ void drawClaudeUsageBars()
   if (currentState != ST_CLAUDE)
     return;
   lcd.fillRect(0, 30, 320, 210, CLAUDE_BG_DARK);
-  drawClaudeCard(10, 38, 300, 96, "SESSION (5H)", claudeFiveHourPct, CLAUDE_PCT_5H_COLOR, claudeFiveHourSecsLeft);
-  drawClaudeCard(10, 140, 300, 96, "WEEKLY (7D)", claudeSevenDayPct, CLAUDE_PCT_7D_COLOR, claudeSevenDaySecsLeft);
+  drawClaudeStripEmail();
+
+  uint16_t sessionColor = claudeFiveHourPct >= 0 ? claudeSeverityRingColor(claudeUsageSeverity(claudeFiveHourPct)) : CLAUDE_PCT_5H_COLOR;
+  drawClaudeRingCard(8, 36, 145, 196, "SESSION (5H)", claudeFiveHourPct, sessionColor, claudeFiveHourSecsLeft);
+  drawClaudeRingCard(167, 36, 145, 196, "WEEKLY (7D)", claudeSevenDayPct, CLAUDE_PCT_7D_COLOR, claudeSevenDaySecsLeft);
 }
 
 void drawClaudeScreen()
 {
-  uint16_t stripColor;
+  uint16_t stripColor = claudeStripColor();
   const char *label;
   switch (claudeSubState)
   {
   case 1:
-    stripColor = CLAUDE_WORKING_COLOR;
     label = "WORKING";
     break;
   case 2:
-    stripColor = CLAUDE_DONE_COLOR;
     label = "DONE";
     break;
   case 3:
-    stripColor = CLAUDE_WAITING_COLOR;
     label = "NEEDS INPUT";
     break;
   case 4:
-    stripColor = CLAUDE_THINKING_COLOR;
     label = "THINKING";
     break;
   default:
-    stripColor = CLAUDE_NEUTRAL_COLOR;
     label = "CLAUDE CODE";
     break;
   }
@@ -111,6 +209,7 @@ void drawClaudeScreen()
   int labelW = strlen(label) * 6;
   lcd.setCursor(310 - labelW, 11);
   lcd.print(label);
+  drawClaudeStripEmail();
 
   drawClaudeUsageBars();
 }
@@ -199,7 +298,19 @@ void enterState(GazeState s)
   case ST_CLAUDE:
     drawClaudeScreen();
     if (claudeSubState == 1)
-      setNeo(217, 119, 87); // Claude orange (#D97757)
+    {
+      // Same session-usage severity grading as the ring/blink below — this
+      // is just the static color shown for the one frame before
+      // pollClaudeActivityPulse() takes over the blinking.
+      if (claudeFiveHourPct >= 0)
+      {
+        uint8_t r, g, b;
+        claudeSeverityRGB(claudeUsageSeverity(claudeFiveHourPct), r, g, b);
+        setNeo(r, g, b);
+      }
+      else
+        setNeo(217, 119, 87); // no usage data yet — plain Claude orange (#D97757)
+    }
     else if (claudeSubState == 2)
       setNeo(74, 222, 128);
     else if (claudeSubState == 3)
@@ -250,11 +361,14 @@ void applyClaudeState(int sub)
 
 // NeoPixel activity indicator while Claude is "working" or "thinking" — a
 // static solid color looked identical whether something was actually
-// happening or the screen was just sitting there. "Working" (orange) is a
+// happening or the screen was just sitting there. "Working" is a
 // rate-of-change-aware BLINK — an actual on/off toggle, faster right after a
 // burst of tool calls, settling into a slower blink once quiet for a few
 // seconds — deliberately more attention-grabbing than a fade, since it means
-// the device is actively doing something right now. "Thinking" (purple) has
+// the device is actively doing something right now. Its color is graded by
+// session-usage severity (claudeSeverityRGB) rather than fixed Claude
+// orange, so a glance at the LED alone hints at how close the 5h limit is.
+// "Thinking" (purple) has
 // no comparable per-call bursts to react to (UserPromptSubmit fires once per
 // turn, not repeatedly), so it stays a calm steady breathing fade instead —
 // blinking would be distracting for a state that can last a while with
@@ -277,7 +391,10 @@ void pollClaudeActivityPulse()
     unsigned long sinceLastPing = now - lastClaudeWorkingPingMs;
     unsigned long blinkPeriodMs = (sinceLastPing < 5000) ? 400 : 900;
     bool on = (now % blinkPeriodMs) < (blinkPeriodMs / 2);
-    setNeo(on ? 217 : 0, on ? 119 : 0, on ? 87 : 0); // Claude orange (#D97757) or off
+    uint8_t r = 217, g = 119, b = 87; // no usage data yet — plain Claude orange (#D97757)
+    if (claudeFiveHourPct >= 0)
+      claudeSeverityRGB(claudeUsageSeverity(claudeFiveHourPct), r, g, b);
+    setNeo(on ? r : 0, on ? g : 0, on ? b : 0);
     return;
   }
 
@@ -305,11 +422,17 @@ void pollClaudeDoneTimeout()
   }
 }
 
-void applyClaudeUsage(float fiveHourPct, long fiveHourSecs, float sevenDayPct, long sevenDaySecs)
+void applyClaudeUsage(float fiveHourPct, long fiveHourSecs, float sevenDayPct, long sevenDaySecs, const String &email)
 {
   claudeFiveHourPct = fiveHourPct;
   claudeFiveHourSecsLeft = fiveHourSecs;
   claudeSevenDayPct = sevenDayPct;
   claudeSevenDaySecsLeft = sevenDaySecs;
+  // Only the app knows the account email (it reads ~/.claude.json) — an
+  // empty string here just means "this particular sender didn't send one"
+  // (e.g. a stale hook script), not "no email", so don't clobber what's
+  // already shown.
+  if (email.length() > 0)
+    claudeAccountEmail = email;
   drawClaudeUsageBars();
 }

@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { Pause, Play, RotateCcw, Settings, SkipForward, Target, X } from 'lucide-react';
+import { Pause, Play, RotateCcw, Settings, SkipForward } from 'lucide-react';
 import { usePomodoroContext } from '../context/PomodoroContext';
-import { useTaskStoreContext } from '../context/TaskStoreContext';
 import { PomodoroSettingsPanel } from './PomodoroSettingsPanel';
 import { PHASE_META, formatTime } from '../lib/utils';
 
@@ -19,8 +18,6 @@ export function PomodoroTimer() {
 		stats,
 		sessionsInCycle,
 		flashKey,
-		activeTaskId,
-		setActiveTask,
 		presets,
 		activePresetId,
 		updateSettings,
@@ -28,10 +25,8 @@ export function PomodoroTimer() {
 		reset,
 		skip,
 	} = usePomodoroContext();
-	const { tasks } = useTaskStoreContext();
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const meta = PHASE_META[phase];
-	const linkedTask = activeTaskId ? tasks.find((t) => t.id === activeTaskId) : undefined;
 	const activePreset = activePresetId ? presets.find((p) => p.id === activePresetId) : undefined;
 
 	return (
@@ -61,18 +56,6 @@ export function PomodoroTimer() {
 					)}
 				</div>
 			</div>
-
-			{linkedTask && (
-				<div className="flex w-full items-center justify-between gap-2 rounded-xl bg-stone-50 px-3 py-2 text-xs text-stone-500">
-					<span className="flex min-w-0 items-center gap-1.5">
-						<Target size={13} className="shrink-0 text-brand-500" />
-						<span className="truncate">{linkedTask.text}</span>
-					</span>
-					<button onClick={() => setActiveTask(null)} className="shrink-0 text-stone-400 hover:text-red-500">
-						<X size={13} />
-					</button>
-				</div>
-			)}
 
 			<div className="relative" style={{ width: SIZE, height: SIZE }}>
 				<svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="h-full w-full -rotate-90">

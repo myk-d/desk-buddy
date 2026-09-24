@@ -19,7 +19,8 @@
  *   #R\n              — software restart
  *   #VERSION\n        — returns the firmware version
  *   #CLAUDE:<sub>\n   — Claude Code state: working/done/waiting/idle (full screen)
- *   #USAGE:<5hPct>,<5hSecs>,<7dPct>,<7dSecs>\n — % and seconds until limits reset
+ *   #USAGE:<5hPct>,<5hSecs>,<7dPct>,<7dSecs>[,<email>]\n — % and seconds until limits
+ *                     reset; trailing email is optional (account email, shown above the cards)
  *   #ANIM:pomowork\n     — Pomodoro: focus (full screen)
  *   #ANIM:pomobreak\n    — Pomodoro: short break (full screen)
  *   #ANIM:pomolongbreak\n — Pomodoro: long break (full screen)
@@ -75,7 +76,7 @@
 // wifi_manager.h calls them, but they're defined further below in
 // claude_screen.h (same translation unit, just a different file).
 void applyClaudeState(int sub);
-void applyClaudeUsage(float fiveHourPct, long fiveHourSecs, float sevenDayPct, long sevenDaySecs);
+void applyClaudeUsage(float fiveHourPct, long fiveHourSecs, float sevenDayPct, long sevenDaySecs, const String &email);
 #include "wifi_manager.h"
 
 #include "pomodoro_screen.h"  // drawPomodoroBackground/drawPomodoroTime

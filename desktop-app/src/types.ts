@@ -1,5 +1,5 @@
 export type Screen = 'scanning' | 'success' | 'welcome' | 'dashboard';
-export type Page = 'dashboard' | 'tasks' | 'calendar' | 'pomodoro' | 'device';
+export type Page = 'dashboard' | 'pomodoro' | 'device';
 
 export interface ClaudeUsage {
 	hasData: boolean;
@@ -7,110 +7,6 @@ export interface ClaudeUsage {
 	fiveHourResetsAt: number | null;
 	sevenDayPct: number | null;
 	sevenDayResetsAt: number | null;
-}
-
-// ── Tasks ────────────────────────────────────────────────────────────────────
-
-export type Priority = 'none' | 'low' | 'medium' | 'high';
-
-export interface Subtask {
-	id: string;
-	text: string;
-	completed: boolean;
-}
-
-export type RecurrenceFreq = 'daily' | 'weekly' | 'monthly' | 'yearly';
-
-export interface RecurrenceRule {
-	freq: RecurrenceFreq;
-	interval: number;
-	// dayjs .day() values (0=Sun..6=Sat); only meaningful when freq === 'weekly'.
-	// null/empty means "same weekday as the anchor date".
-	byWeekday: number[] | null;
-	endDate: string | null;
-	count: number | null;
-}
-
-export interface Task {
-	id: string;
-	sectionId: string;
-	text: string;
-	description: string;
-	completed: boolean;
-	pinned: boolean;
-	priority: Priority;
-	dueDate: string | null;
-	recurrence: RecurrenceRule | null;
-	// The due date at the moment recurrence was first turned on. Fixed forever
-	// (unlike dueDate, which advances on each completion) so interval/weekday
-	// math stays correct after several advances.
-	recurrenceAnchorDate: string | null;
-	// When true and there's at least one subtask, `completed` is kept in sync
-	// with "every subtask is completed" on every subtask add/toggle/delete.
-	autoCompleteWithSubtasks: boolean;
-	tagIds: string[];
-	subtasks: Subtask[];
-	order: number;
-	createdAt: number;
-	updatedAt: number;
-}
-
-export type GroupBy = 'sequence' | 'date' | 'createdAt' | 'tag' | 'priority' | 'none';
-export type SortBy = 'sequence' | 'date' | 'createdAt' | 'updatedAt' | 'name' | 'tag' | 'priority';
-
-export type TagColor = 'rose' | 'amber' | 'emerald' | 'sky' | 'violet' | 'stone';
-
-// Note: `updatedAt` is added on top of the source app's shape (which didn't
-// need it under Firestore) because this app's `createJsonStore<T>` requires
-// every stored entity to satisfy `{ id, createdAt, updatedAt }`.
-export interface Tag {
-	id: string;
-	name: string;
-	color: TagColor;
-	createdAt: number;
-	updatedAt: number;
-}
-
-export interface Section {
-	id: string;
-	listId: string;
-	name: string;
-	order: number;
-	createdAt: number;
-	updatedAt: number;
-}
-
-export interface TaskList {
-	id: string;
-	name: string;
-	isDefault?: boolean;
-	createdAt: number;
-	updatedAt: number;
-	groupBy: GroupBy;
-	sortBy: SortBy;
-}
-
-// ── Calendar ─────────────────────────────────────────────────────────────────
-
-export interface CalendarEvent {
-	id: string;
-	title: string;
-	description: string;
-	date: string;
-	allDay: boolean;
-	startTime: string;
-	endTime: string;
-	location: string;
-	color: TagColor;
-	reminderMinutes: number | null;
-	recurrence: RecurrenceRule | null;
-	// Dates (of this series) to skip when expanding recurrence — deleted or overridden occurrences.
-	recurrenceExceptions: string[];
-	// Set only on a standalone event that overrides one occurrence of a series;
-	// null on normal events and on series masters.
-	recurrenceMasterId: string | null;
-	createdAt: number;
-	updatedAt: number;
 }
 
 // ── Pomodoro ─────────────────────────────────────────────────────────────────
@@ -133,7 +29,6 @@ export interface PomodoroPreset {
 	longBreakMinutes: number;
 	sessionsBeforeLongBreak: number;
 	autoStartNext: boolean;
-	linkedTaskId?: string | null;
 	createdAt: number;
 	updatedAt: number;
 }
@@ -200,31 +95,17 @@ declare global {
 			onStatusChange: (callback: (status: string, path?: string) => void) => void;
 			onData: (callback: (data: string) => void) => void;
 			onModeChange: (callback: (mode: string) => void) => void;
-			onUpdateReady: (callback: () => void) => void;
-			installUpdate: () => void;
 			claude: {
 				isSetup: () => Promise<boolean>;
 				setup: () => Promise<boolean>;
 				testIntegration: () => Promise<{ ok: boolean; hooksConfigured: boolean; message: string }>;
 				getUsage: () => Promise<ClaudeUsage>;
 				getSource: () => Promise<string | null>;
+				getAccountEmail: () => Promise<string | null>;
 				onState: (cb: (state: string) => void) => void;
 				onUsage: (cb: (u: ClaudeUsage) => void) => void;
 				onSource: (cb: (source: string) => void) => void;
 			};
-			firmware: {
-				getDeviceVersion: () => Promise<string | null>;
-				checkUpdate: () => Promise<{ version: string; firmwareUrl: string } | null>;
-				flash: () => Promise<string>;
-				onProgress: (cb: (pct: number, status: string) => void) => void;
-				onError: (cb: (msg: string) => void) => void;
-				onVersion: (cb: (version: string | null) => void) => void;
-			};
-			lists: CrudApi<TaskList>;
-			sections: CrudApi<Section>;
-			tasks: CrudApi<Task>;
-			tags: CrudApi<Tag>;
-			events: CrudApi<CalendarEvent>;
 			pomodoroPresets: CrudApi<PomodoroPreset>;
 			pomodoroSettings: ValueApi<PomodoroSettings>;
 			pomodoroStats: ValueApi<PomodoroStats>;

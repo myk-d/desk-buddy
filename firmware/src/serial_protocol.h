@@ -73,19 +73,25 @@ void handlePacket(const String &cmd)
 
   if (cmd.startsWith("USAGE:"))
   {
-    // #USAGE:<5hPct>,<5hSecsLeft>,<7dPct>,<7dSecsLeft>\n — the app computes
-    // the seconds-until-reset (it has real wall-clock time); firmware just displays it.
+    // #USAGE:<5hPct>,<5hSecsLeft>,<7dPct>,<7dSecsLeft>[,<email>]\n — the app
+    // computes the seconds-until-reset (it has real wall-clock time);
+    // firmware just displays it. Trailing email is optional so older hook
+    // scripts that don't send one still parse fine.
     String rest = cmd.substring(6);
     int c1 = rest.indexOf(',');
     int c2 = (c1 >= 0) ? rest.indexOf(',', c1 + 1) : -1;
     int c3 = (c2 >= 0) ? rest.indexOf(',', c2 + 1) : -1;
     if (c1 >= 0 && c2 >= 0 && c3 >= 0)
     {
+      int c4 = rest.indexOf(',', c3 + 1);
+      long sevenDaySecs = (c4 >= 0) ? rest.substring(c3 + 1, c4).toInt() : rest.substring(c3 + 1).toInt();
+      String email = (c4 >= 0) ? rest.substring(c4 + 1) : "";
       applyClaudeUsage(
           rest.substring(0, c1).toFloat(),
           rest.substring(c1 + 1, c2).toInt(),
           rest.substring(c2 + 1, c3).toFloat(),
-          rest.substring(c3 + 1).toInt());
+          sevenDaySecs,
+          email);
     }
     return;
   }
