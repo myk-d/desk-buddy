@@ -1,5 +1,5 @@
 import { RefObject } from 'react';
-import { COMMANDS } from '../constants';
+import { COMMANDS, TABY_COMMANDS } from '../constants';
 
 interface Props {
 	connected: boolean;
@@ -43,6 +43,25 @@ export function DashboardPage({ connected, currentMode, deviceLog, logEndRef, on
 							</button>
 						))}
 					</div>
+				</div>
+			</div>
+
+			<div className="flex flex-col gap-3 rounded-2xl border border-stone-200 bg-white p-6">
+				<div>
+					<span className="text-lg font-bold text-stone-900">Bonus Reactions</span>
+					<p className="text-xs text-stone-500">A sampler of the ~84 Taby character animations — any id works over serial, these are just a few to try.</p>
+				</div>
+				<div className="grid grid-cols-5 gap-2.5">
+					{TABY_COMMANDS.map(({ label, id }) => (
+						<button
+							key={id}
+							disabled={!connected}
+							onClick={() => onCommand(`#TABY:${id}\n`, `TABY · ${id.toUpperCase()}`)}
+							className="cursor-pointer rounded-lg border border-stone-200 bg-stone-50 p-2.5 text-xs font-semibold text-stone-600 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:text-stone-300 disabled:hover:bg-stone-50"
+						>
+							{label}
+						</button>
+					))}
 				</div>
 			</div>
 

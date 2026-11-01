@@ -10,6 +10,7 @@
 		"build": "tsc && vite build && electron-builder --linux",
 		"build:win": "tsc && vite build && electron-builder --win --x64",
 		"build:mac": "tsc && vite build && electron-builder --mac",
+		"build:lin": "tsc && vite build && electron-builder --linux --x64",
 		"build:all": "tsc && vite build && electron-builder --linux --x64 && electron-builder --win --x64",
 		"release": "tsc && vite build && electron-builder --linux --x64 --publish always && electron-builder --win --x64 --publish always",
 		"release:mac": "tsc && vite build && electron-builder --mac --publish always",

@@ -284,7 +284,7 @@ function setupClaudeHooks(): void {
 
 const TARGET_VID = '303a';
 
-type Category = 'focus' | 'relax' | 'idle';
+type Category = 'focus' | 'relax' | 'idle' | 'chat' | 'music' | 'calendar' | 'tasks';
 
 // Names are compared lowercase after normalisation.
 // Linux  → WM_CLASS instance (xprop)      e.g. "code", "webstorm"
@@ -321,25 +321,83 @@ const RELAX_APPS = new Set([
 	'chromium', 'chromium-browser',
 	'opera',
 	// media
-	'spotify', 'vlc',
-	// chat / social
-	'discord', 'slack', 'telegram', 'telegram desktop',
-	'microsoft teams', 'teams',
+	'vlc',
 	// games
 	'steam',
 ]);
 
-function classifyApp(appName: string | null): Category {
+// Chat/calls — on the work machine this is Microsoft Teams specifically, not
+// just the personal-use Discord/Slack/Telegram.
+const CHAT_APPS = new Set([
+	'discord', 'slack', 'telegram', 'telegram desktop',
+	'microsoft teams', 'teams', 'teams.exe',
+]);
+
+const MUSIC_APPS = new Set([
+	'spotify',
+	// YouTube Music — exact name depends on how it's installed: a Chrome/
+	// Edge "installed app" (PWA) typically gets its own WM_CLASS/process
+	// name rather than showing up as the browser, but the precise string
+	// varies. Covers the common desktop-wrapper names; if it doesn't fire,
+	// check the real name (Linux: `xprop -id $(xprop -root _NET_ACTIVE_WINDOW | grep -o '0x.*') WM_CLASS` while it's focused) and add it here.
+	'youtube music', 'youtube-music', 'ytmdesktop', 'youtubemusic',
+]);
+
+const CALENDAR_APPS = new Set([
+	'calendar',                               // macOS native
+	'microsoft outlook', 'outlook',
+	'thunderbird',
+	'fantastical', 'fantastical2',
+	'notion calendar', 'cron',
+]);
+
+const TASK_APPS = new Set([
+	'notion', 'todoist', 'things', 'things3',
+	'trello', 'linear', 'jira', 'asana', 'clickup',
+]);
+
+// Browser tabs (YouTube Music, Azure DevOps, ...) can't be told apart by
+// process name alone — that only ever says "chrome". These look at the
+// window title instead (which for a browser is the page title), and only
+// get checked once the process name has already come back 'relax' (i.e.
+// it really is a recognized browser) — so a terminal that happens to have
+// "azure devops" in its scrollback doesn't get misclassified.
+const TITLE_OVERRIDES: { keywords: string[]; category: Category }[] = [
+	{ keywords: ['azure devops', 'dev.azure.com'], category: 'tasks' },
+	{ keywords: ['youtube music', 'music.youtube.com'], category: 'music' },
+];
+
+function classifyApp(appName: string | null, title: string | null): Category {
 	if (!appName) return 'idle';
 	if (FOCUS_APPS.has(appName)) return 'focus';
-	if (RELAX_APPS.has(appName)) return 'relax';
+	if (CHAT_APPS.has(appName)) return 'chat';
+	if (MUSIC_APPS.has(appName)) return 'music';
+	if (CALENDAR_APPS.has(appName)) return 'calendar';
+	if (TASK_APPS.has(appName)) return 'tasks';
+	if (RELAX_APPS.has(appName)) {
+		if (title) {
+			for (const { keywords, category } of TITLE_OVERRIDES) {
+				if (keywords.some((k) => title.includes(k))) return category;
+			}
+		}
+		return 'relax';
+	}
 	return 'idle';
 }
 
+// focus/relax/idle are the 3 states with their own dedicated firmware
+// animation (#ANIM:<name>); chat/music/calendar/tasks are "bonus" Taby
+// animations (#TABY:<id>, see ../firmware/CLAUDE.md) repurposed here as new
+// ambient states — all 4 are loop:true in firmware/src/taby_registry.h, so
+// they play indefinitely until the category changes, same as #ANIM: ones.
 const ANIM_PACKET: Record<Category, string> = {
 	focus: '#ANIM:focus\n',
 	relax: '#ANIM:relax\n',
 	idle: '#ANIM:idle\n',
+	chat: '#TABY:talking_default_loop\n',
+	music: '#TABY:listening_music_loop\n',
+	calendar: '#TABY:calendar_loop\n',
+	tasks: '#TABY:creating_task_loop\n',
 };
 
 // Matches the mode labels already used by the manual buttons (see src/constants.ts ANIM_MODE_MAP).
@@ -347,29 +405,47 @@ const MODE_LABEL: Record<Category, string> = {
 	focus: 'WORKING',
 	relax: 'RELAX',
 	idle: 'IDLE',
+	chat: 'CHAT',
+	music: 'MUSIC',
+	calendar: 'CALENDAR',
+	tasks: 'TASKS',
 };
 
 // Pre-encode the Windows PowerShell script as UTF-16LE base64 once at startup.
 // -EncodedCommand avoids all shell-quoting issues with embedded strings.
+// Outputs "ProcessName|Window Title" — the title is what lets classifyApp()
+// tell browser tabs apart (YouTube Music, Azure DevOps, ...) from each
+// other, since the process name alone is just "chrome" for all of them.
 const WIN_PS_ENCODED = process.platform === 'win32'
 	? Buffer.from(
 		`$code=@"
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 public class WinFG {
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h,out uint p);
+    [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
 }
 "@
 Add-Type -TypeDefinition $code -Language CSharp -EA SilentlyContinue
 $h=[WinFG]::GetForegroundWindow();$p=[uint32]0
 [WinFG]::GetWindowThreadProcessId($h,[ref]$p)|Out-Null
-try{(Get-Process -Id $p -EA Stop).ProcessName}catch{Write-Output ""}`,
+$sb=New-Object System.Text.StringBuilder 256
+[WinFG]::GetWindowText($h,$sb,256)|Out-Null
+$name=""
+try{$name=(Get-Process -Id $p -EA Stop).ProcessName}catch{}
+Write-Output "$name|$($sb.ToString())"`,
 		'utf16le',
 	).toString('base64')
 	: '';
 
-async function getActiveWindowApp(): Promise<string | null> {
+interface ActiveWindowInfo {
+	app: string | null;
+	title: string | null; // lowercased page/window title — only reliable for 'relax' (browser) windows, see TITLE_OVERRIDES
+}
+
+async function getActiveWindowInfo(): Promise<ActiveWindowInfo> {
 	try {
 		if (process.platform === 'linux') {
 			const winIdOut = execSync('xprop -root _NET_ACTIVE_WINDOW', { encoding: 'utf8', timeout: 800 });
@@ -377,36 +453,56 @@ async function getActiveWindowApp(): Promise<string | null> {
 			// "0x0" is xprop's own way of saying "no window currently has focus"
 			// (e.g. focus briefly on the desktop/a detached DevTools window) — it
 			// matches the hex regex but xprop -id rejects it as an invalid id.
-			if (!winIdMatch || winIdMatch[0] === '0x0') return null;
+			if (!winIdMatch || winIdMatch[0] === '0x0') return { app: null, title: null };
 			const classOut = execSync(`xprop -id ${winIdMatch[0]} WM_CLASS`, { encoding: 'utf8', timeout: 800 });
 			// WM_CLASS(STRING) = "code", "Code" — instance name is the first quoted token
 			const classMatch = classOut.match(/"([^"]+)"/);
-			return classMatch ? classMatch[1].toLowerCase() : null;
+			const app = classMatch ? classMatch[1].toLowerCase() : null;
+
+			let title: string | null = null;
+			try {
+				// _NET_WM_NAME (UTF8) is the modern property; WM_NAME (legacy STRING)
+				// is the fallback some windows still only set — ask for both in one
+				// call, prefer whichever comes back first.
+				const titleOut = execSync(`xprop -id ${winIdMatch[0]} _NET_WM_NAME WM_NAME`, { encoding: 'utf8', timeout: 800 });
+				const titleMatch = titleOut.match(/_NET_WM_NAME\(UTF8_STRING\) = "([^"]*)"/) || titleOut.match(/WM_NAME\(STRING\) = "([^"]*)"/);
+				title = titleMatch ? titleMatch[1].toLowerCase() : null;
+			} catch {
+				// window has neither property (rare) — title stays null, app-only classification still works
+			}
+			return { app, title };
 		}
 
 		if (process.platform === 'darwin') {
-			// osascript < 100 ms; safe to block
+			// osascript < 100 ms; safe to block. "|||" is a delimiter that won't
+			// show up in a real title, unlike a comma (AppleScript's own list
+			// join), which browser tab titles routinely contain.
 			const out = execSync(
-				`osascript -e 'tell application "System Events" to get name of first process whose frontmost is true'`,
+				`osascript -e 'tell application "System Events" to tell (first process whose frontmost is true) to (name) & "|||" & (if (count of windows) > 0 then name of front window else "")'`,
 				{ encoding: 'utf8', timeout: 1500 },
 			);
-			return out.trim().toLowerCase() || null;
+			const [app, title] = out.trim().split('|||');
+			return { app: app?.toLowerCase() || null, title: title?.toLowerCase() || null };
 		}
 
 		if (process.platform === 'win32') {
 			// PowerShell startup ~300–500 ms; use async exec so the main process stays responsive
-			return new Promise<string | null>((resolve) => {
+			return new Promise<ActiveWindowInfo>((resolve) => {
 				exec(
 					`powershell -NoProfile -NonInteractive -EncodedCommand ${WIN_PS_ENCODED}`,
 					{ timeout: 4000 },
-					(err, stdout) => resolve(err ? null : stdout.trim().toLowerCase() || null),
+					(err, stdout) => {
+						if (err) return resolve({ app: null, title: null });
+						const [app, title] = stdout.trim().split('|');
+						resolve({ app: app?.toLowerCase() || null, title: title?.toLowerCase() || null });
+					},
 				);
 			});
 		}
 
-		return null;
+		return { app: null, title: null };
 	} catch {
-		return null;
+		return { app: null, title: null };
 	}
 }
 
@@ -538,8 +634,8 @@ function startWindowTracker() {
 		if (!isDeviceConnected || !activePort?.isOpen || isChecking || isPomodoroActive || claudeCodeState !== 'idle') return;
 		isChecking = true;
 		try {
-			const appName = await getActiveWindowApp();
-			const category = classifyApp(appName);
+			const { app: appName, title } = await getActiveWindowInfo();
+			const category = classifyApp(appName, title);
 
 			if (category === lastCategory) return;
 			lastCategory = category;

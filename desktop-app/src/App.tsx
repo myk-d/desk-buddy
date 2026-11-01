@@ -21,7 +21,14 @@ export default function App() {
 	// regardless of which page triggered the change.
 	function sendAnimPacket(packet: string) {
 		sendPacket(packet);
-		const m = ANIM_MODE_MAP[packet.trim()];
+		const trimmed = packet.trim();
+		if (trimmed.startsWith('#TABY:')) {
+			// One of the ~84 bonus Taby animations — not worth 84 ANIM_MODE_MAP
+			// entries, just derive a label from the id directly.
+			setCurrentMode(`TABY · ${trimmed.slice(6).toUpperCase()}`);
+			return;
+		}
+		const m = ANIM_MODE_MAP[trimmed];
 		if (m) setCurrentMode(m);
 	}
 
