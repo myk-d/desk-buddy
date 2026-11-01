@@ -1,0 +1,19 @@
+# Name,   Type, SubType,  Offset,   Size,     Flags
+#
+# Single app slot (no OTA) + a big LittleFS partition for the ~84 Taby
+# character GIFs (9.93MB at native 280x456 resolution — kept unscaled per
+# request, since WiFi OTA isn't used and there's no flash-size pressure to
+# shrink them). Replaces default_16MB.csv's dual-OTA layout: that gave each
+# app slot only 6.25MB, which the PROGMEM-baked version of this feature blew
+# through immediately (34MB of compressed animation data for 84 full-canvas
+# animations). Moving the GIFs to a filesystem partition sidesteps that
+# entirely — they're loaded by path at runtime, not linked into the binary.
+#
+# Trade-off: WiFi OTA (POST /update, web_server.h) no longer has a second
+# slot to flash into — this device is now USB/BOOT-button-only for
+# firmware updates, same as it already was for everything except that one
+# endpoint. See firmware/CLAUDE.md.
+nvs,      data, nvs,      0x9000,   0x5000,
+factory,  app,  factory,  0x10000,  0x400000,
+storage,  data, littlefs, 0x410000, 0xB80000,
+coredump, data, coredump, 0xF90000, 0x10000,

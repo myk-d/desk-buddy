@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Схема з'єднань Beak Buddy на ESP32-S3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#EEF2F4;--sheet:#FFFFFF;--ink:#1C2830;--muted:#56666F;--rule:#CFD9DE;--pwr:#C62828;--gnd:#1C2830;--tft:#1F5FBF;--i2c:#B0306A;--opt:#7D8A93;
+--sans:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;--cond:'IBM Plex Sans Condensed','IBM Plex Sans','Arial Narrow',Arial,sans-serif}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--paper:#0E1417;--sheet:#152026;--ink:#DCE6EB;--muted:#94A5AE;--rule:#2B3942;--pwr:#FF6F66;--gnd:#DCE6EB;--tft:#74AAFF;--i2c:#F07AB0;--opt:#76858E}}
+:root[data-theme="dark"]{--paper:#0E1417;--sheet:#152026;--ink:#DCE6EB;--muted:#94A5AE;--rule:#2B3942;--pwr:#FF6F66;--gnd:#DCE6EB;--tft:#74AAFF;--i2c:#F07AB0;--opt:#76858E}
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.6}
+main{max-width:1240px;margin:0 auto;padding:32px 20px 64px}
+header{max-width:760px;margin-bottom:28px}
+h1{font-size:clamp(26px,4vw,36px);line-height:1.15;font-weight:600;margin:0 0 10px;letter-spacing:-.01em}
+h2{font-size:21px;font-weight:600;margin:48px 0 12px}
+p{margin:0 0 12px;max-width:72ch}
+.lede{color:var(--muted);font-size:17px}
+.sheet{background:var(--sheet);border:1px solid var(--rule);border-radius:6px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.sheet svg{display:block;min-width:900px;width:100%;height:auto}
+.hint{font-size:14px;color:var(--muted);margin-top:8px}
+.legend{display:flex;flex-wrap:wrap;gap:10px 24px;margin:16px 0 0;padding:0;list-style:none;font-size:15px}
+.legend li{display:flex;align-items:center;gap:8px}
+.sw{display:inline-block;width:28px;height:0;border-top:3px solid currentColor;flex:none}
+.sw.dash{border-top-style:dashed}
+.c-pwr{color:var(--pwr)}.c-gnd{color:var(--gnd)}.c-tft{color:var(--tft)}.c-i2c{color:var(--i2c)}.c-opt{color:var(--opt)}
+.tablewrap{overflow-x:auto;border:1px solid var(--rule);border-radius:6px;background:var(--sheet)}
+table{border-collapse:collapse;width:100%;min-width:560px;font-size:15px}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-weight:600;font-size:14px;color:var(--muted);background:transparent}
+tr.group td{font-weight:600;background:color-mix(in srgb,var(--rule) 35%,transparent)}
+td.id{font-family:var(--cond);font-weight:600;white-space:nowrap}
+td .sw{margin-right:8px;vertical-align:middle}
+ol.steps{padding-left:22px;max-width:72ch}
+ol.steps li{margin-bottom:10px}
+.warn{border-left:4px solid var(--pwr);padding:12px 16px;background:var(--sheet);max-width:72ch;margin:16px 0}
+.w{fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.w.pwr{stroke:var(--pwr)}.w.gnd{stroke:var(--gnd)}.w.tft{stroke:var(--tft)}.w.i2c{stroke:var(--i2c)}.w.opt{stroke:var(--opt);stroke-dasharray:6 5}
+.dot{stroke:none}.dot.pwr{fill:var(--pwr)}.dot.gnd{fill:var(--gnd)}.dot.tft{fill:var(--tft)}.dot.i2c{fill:var(--i2c)}
+.comp{fill:var(--sheet);stroke:var(--ink);stroke-width:1.6}
+.sym{fill:none;stroke:var(--ink);stroke-width:2;stroke-linecap:round}
+.term{fill:var(--sheet);stroke:var(--ink);stroke-width:1.6}
+.lbl{font-family:var(--cond);font-size:15px;font-weight:500;fill:var(--ink)}
+.ttl{font-family:var(--sans);font-size:16px;font-weight:600;fill:var(--ink)}
+.sub{font-family:var(--sans);font-size:13px;fill:var(--muted)}
+.tag{font-family:var(--cond);font-size:12px;font-weight:600;fill:var(--muted)}
+.frame{fill:none;stroke:var(--rule);stroke-width:1.5}
+</style>
+</head>
+<body>
+<main>
+<header>
+<h1>Схема з'єднань Beak Buddy на ESP32-S3</h1>
+<p class="lede">ESP32-S3 DevKitC-1 N16R8 живиться від USB-C (лише живлення й прошивка, без батареї). До нього підключені TFT-екран ILI9341 320×240 по SPI і кліматичний датчик AHT20+BMP280 по I²C. NeoPixel — вбудований RGB-світлодіод на самій платі DevKitC-1 (GPIO48), окремо підключати не треба. Кожен дріт має номер, який відповідає рядку в таблиці нижче. Піни зведено з <code>firmware/src/display.h</code>.</p>
+</header>
+
+<figure class="sheet" style="margin:0">
+<svg viewBox="0 0 1180 840" role="img" aria-labelledby="schTitle schDesc">
+<title id="schTitle">Принципова схема з'єднань Beak Buddy</title>
+<desc id="schDesc">ESP32-S3 DevKitC-1 живиться по USB-C. Два його піни 3V3 і два піни GND живлять TFT-екран і кліматичний датчик окремо. Екран ILI9341 підключено по SPI: GPIO12 SCK, GPIO11 SDI, GPIO13 SDO, GPIO14 DC, GPIO10 CS, GPIO9 RST, GPIO21 підсвітка. Датчик AHT20+BMP280 на шині I2C: SDA GPIO4, SCL GPIO5 — ці два піни ще не звірено з фізичною платою. GPIO48 веде до вбудованого на платі NeoPixel-світлодіода, без зовнішньої розводки.</desc>
+<rect class="frame" x="20" y="20" width="1140" height="800" rx="4"/>
+
+<g>
+<rect class="comp" x="160" y="20" width="70" height="24" rx="3"/>
+<text class="lbl" x="195" y="37" text-anchor="middle">USB-C</text>
+<line class="sym" x1="195" y1="44" x2="195" y2="85"/>
+<text class="sub" x="195" y="14" text-anchor="middle">5 V, живлення + прошивка</text>
+</g>
+
+<g>
+<rect class="comp" x="100" y="85" width="240" height="576" rx="4"/>
+<text class="ttl" x="220" y="73" text-anchor="middle">U1 ESP32-S3 DevKitC-1 N16R8</text>
+<text class="lbl" x="330" y="124" text-anchor="end">3V3 №1</text>
+<text class="lbl" x="330" y="160" text-anchor="end">GND №1</text>
+<text class="lbl" x="330" y="196" text-anchor="end">GPIO21</text>
+<text class="lbl" x="330" y="232" text-anchor="end">GPIO12</text>
+<text class="lbl" x="330" y="268" text-anchor="end">GPIO11</text>
+<text class="lbl" x="330" y="304" text-anchor="end">GPIO13</text>
+<text class="lbl" x="330" y="340" text-anchor="end">GPIO14</text>
+<text class="lbl" x="330" y="376" text-anchor="end">GPIO10</text>
+<text class="lbl" x="330" y="412" text-anchor="end">GPIO9</text>
+<text class="sub" x="220" y="450" text-anchor="middle">GPIO48 — вбудований NeoPixel</text>
+<text class="sub" x="220" y="466" text-anchor="middle">(RGB-світлодіод на платі, без дротів)</text>
+<text class="lbl" x="330" y="522" text-anchor="end">3V3 №2</text>
+<text class="lbl" x="330" y="558" text-anchor="end">GND №2</text>
+<text class="lbl" x="330" y="594" text-anchor="end">GPIO4</text>
+<text class="lbl" x="330" y="630" text-anchor="end">GPIO5</text>
+</g>
+
+<!-- TFT: U2 -->
+<g>
+<rect class="comp" x="760" y="85" width="300" height="358" rx="4"/>
+<text class="ttl" x="910" y="73" text-anchor="middle">U2 TFT ILI9341 320×240 (SPI)</text>
+<text class="sub" x="1048" y="105" text-anchor="end">SPI2_HOST, 40 МГц запис</text>
+<text class="lbl" x="772" y="124">VCC</text>
+<text class="lbl" x="772" y="160">GND</text>
+<text class="lbl" x="772" y="196">LED (підсвітка)</text>
+<text class="lbl" x="772" y="232">SCK</text>
+<text class="lbl" x="772" y="268">SDI (MOSI)</text>
+<text class="lbl" x="772" y="304">SDO (MISO)</text>
+<text class="lbl" x="772" y="340">D/C</text>
+<text class="lbl" x="772" y="376">CS</text>
+<text class="lbl" x="772" y="412">RST</text>
+</g>
+
+<!-- Sensor: U3 -->
+<g>
+<rect class="comp" x="760" y="483" width="300" height="178" rx="4"/>
+<text class="ttl" x="910" y="471" text-anchor="middle">U3 AHT20+BMP280 (I²C)</text>
+<text class="sub" x="1048" y="503" text-anchor="end">BMP280: адреса 0x76 або 0x77</text>
+<text class="lbl" x="772" y="522">VCC</text>
+<text class="lbl" x="772" y="558">GND</text>
+<text class="lbl" x="772" y="594">SDA</text>
+<text class="lbl" x="772" y="630">SCL</text>
+</g>
+
+<!-- wires: straight, source x=340, dest x=760 -->
+<path class="w pwr" d="M340 120 H760"/><circle class="dot pwr" cx="340" cy="120" r="4"/><circle class="dot pwr" cx="760" cy="120" r="4"/>
+<text class="tag" x="550" y="114" text-anchor="middle">W1</text>
+<path class="w gnd" d="M340 156 H760"/><circle class="dot gnd" cx="340" cy="156" r="4"/><circle class="dot gnd" cx="760" cy="156" r="4"/>
+<text class="tag" x="550" y="150" text-anchor="middle">W2</text>
+<path class="w tft" d="M340 192 H760"/><circle class="dot tft" cx="340" cy="192" r="4"/><circle class="dot tft" cx="760" cy="192" r="4"/>
+<text class="tag" x="550" y="186" text-anchor="middle">W3</text>
+<path class="w tft" d="M340 228 H760"/><circle class="dot tft" cx="340" cy="228" r="4"/><circle class="dot tft" cx="760" cy="228" r="4"/>
+<text class="tag" x="550" y="222" text-anchor="middle">W4</text>
+<path class="w tft" d="M340 264 H760"/><circle class="dot tft" cx="340" cy="264" r="4"/><circle class="dot tft" cx="760" cy="264" r="4"/>
+<text class="tag" x="550" y="258" text-anchor="middle">W5</text>
+<path class="w tft" d="M340 300 H760"/><circle class="dot tft" cx="340" cy="300" r="4"/><circle class="dot tft" cx="760" cy="300" r="4"/>
+<text class="tag" x="550" y="294" text-anchor="middle">W6</text>
+<path class="w tft" d="M340 336 H760"/><circle class="dot tft" cx="340" cy="336" r="4"/><circle class="dot tft" cx="760" cy="336" r="4"/>
+<text class="tag" x="550" y="330" text-anchor="middle">W7</text>
+<path class="w tft" d="M340 372 H760"/><circle class="dot tft" cx="340" cy="372" r="4"/><circle class="dot tft" cx="760" cy="372" r="4"/>
+<text class="tag" x="550" y="366" text-anchor="middle">W8</text>
+<path class="w tft" d="M340 408 H760"/><circle class="dot tft" cx="340" cy="408" r="4"/><circle class="dot tft" cx="760" cy="408" r="4"/>
+<text class="tag" x="550" y="402" text-anchor="middle">W9</text>
+
+<path class="w pwr" d="M340 518 H760"/><circle class="dot pwr" cx="340" cy="518" r="4"/><circle class="dot pwr" cx="760" cy="518" r="4"/>
+<text class="tag" x="550" y="512" text-anchor="middle">W10</text>
+<path class="w gnd" d="M340 554 H760"/><circle class="dot gnd" cx="340" cy="554" r="4"/><circle class="dot gnd" cx="760" cy="554" r="4"/>
+<text class="tag" x="550" y="548" text-anchor="middle">W11</text>
+<path class="w i2c" d="M340 590 H760"/><circle class="dot i2c" cx="340" cy="590" r="4"/><circle class="dot i2c" cx="760" cy="590" r="4"/>
+<text class="tag" x="550" y="584" text-anchor="middle">W12</text>
+<path class="w i2c" d="M340 626 H760"/><circle class="dot i2c" cx="340" cy="626" r="4"/><circle class="dot i2c" cx="760" cy="626" r="4"/>
+<text class="tag" x="550" y="620" text-anchor="middle">W13</text>
+
+<g>
+<rect class="frame" x="40" y="701" width="320" height="86"/>
+<line class="frame" x1="40" y1="741" x2="360" y2="741"/>
+<text class="ttl" x="54" y="727">Beak Buddy на ESP32-S3</text>
+<text class="sub" x="54" y="761">Схема з'єднань</text>
+<text class="sub" x="54" y="778">Арк. 1 — TFT, кліматичний датчик</text>
+</g>
+</svg>
+</figure>
+<p class="hint">На телефоні схему можна гортати вбік.</p>
+
+<ul class="legend" aria-label="Кольори дротів">
+<li><span class="sw c-pwr"></span>3.3 V</li>
+<li><span class="sw c-gnd"></span>GND (земля)</li>
+<li><span class="sw c-tft"></span>Сигнали SPI (екран)</li>
+<li><span class="sw c-i2c"></span>Шина I²C (кліматичний датчик)</li>
+</ul>
+
+<h2>Як розведено живлення</h2>
+<p>Окремого стабілізатора чи батареї немає — USB-C живить DevKitC-1 напряму, а його власний регулятор видає 3.3 V. Усередині плати всі піни 3V3 з'єднані між собою, так само як і всі піни GND, тому "3V3 №1/№2" і "GND №1/№2" на схемі — це просто два окремі фізичні піни під дві різні периферії, не дві різні напруги. Підійде будь-який пін 3V3 чи GND на платі — головне, один дріт на пін, щоб не збирати все на одному контакті. NeoPixel живлення не потребує окремо — він на платі й живиться разом з рештою ESP32-S3.</p>
+<div class="warn"><p style="margin:0">Піни I²C (<strong>GPIO4 / GPIO5</strong>, W12–W13) вибрано без фізичної плати в руках — датчик на момент написання ще їхав поштою. Перед пайкою звірте, що це справді вільні, виведені піни на вашому DevKitC-1, і за потреби зміните <code>PIN_I2C_SDA</code>/<code>PIN_I2C_SCL</code> у <code>firmware/src/display.h</code> (одна правка, перепрошивка).</p></div>
+
+<h2>Перелік дротів</h2>
+<div class="tablewrap">
+<table>
+<thead><tr><th>№</th><th>Звідки (U1)</th><th>Куди</th><th>Примітка</th></tr></thead>
+<tbody>
+<tr class="group"><td colspan="4">TFT-екран ILI9341 (U2)</td></tr>
+<tr><td class="id"><span class="sw c-pwr"></span>W1</td><td>3V3 №1</td><td>U2 VCC</td><td></td></tr>
+<tr><td class="id"><span class="sw c-gnd"></span>W2</td><td>GND №1</td><td>U2 GND</td><td></td></tr>
+<tr><td class="id"><span class="sw c-tft"></span>W3</td><td>GPIO21</td><td>U2 LED</td><td>Підсвітка, лише увімкнено/вимкнено (<code>digitalWrite</code>, без ШІМ)</td></tr>
+<tr><td class="id"><span class="sw c-tft"></span>W4</td><td>GPIO12</td><td>U2 SCK</td><td>Такт SPI</td></tr>
+<tr><td class="id"><span class="sw c-tft"></span>W5</td><td>GPIO11</td><td>U2 SDI (MOSI)</td><td></td></tr>
+<tr><td class="id"><span class="sw c-tft"></span>W6</td><td>GPIO13</td><td>U2 SDO (MISO)</td><td></td></tr>
+<tr><td class="id"><span class="sw c-tft"></span>W7</td><td>GPIO14</td><td>U2 D/C</td><td></td></tr>
+<tr><td class="id"><span class="sw c-tft"></span>W8</td><td>GPIO10</td><td>U2 CS</td><td></td></tr>
+<tr><td class="id"><span class="sw c-tft"></span>W9</td><td>GPIO9</td><td>U2 RST</td><td></td></tr>
+<tr class="group"><td colspan="4">Кліматичний датчик AHT20+BMP280 (U3)</td></tr>
+<tr><td class="id"><span class="sw c-pwr"></span>W10</td><td>3V3 №2</td><td>U3 VCC</td><td></td></tr>
+<tr><td class="id"><span class="sw c-gnd"></span>W11</td><td>GND №2</td><td>U3 GND</td><td></td></tr>
+<tr><td class="id"><span class="sw c-i2c"></span>W12</td><td>GPIO4</td><td>U3 SDA</td><td>Не звірено з платою — див. попередження вище</td></tr>
+<tr><td class="id"><span class="sw c-i2c"></span>W13</td><td>GPIO5</td><td>U3 SCL</td><td>Не звірено з платою — див. попередження вище</td></tr>
+</tbody>
+</table>
+</div>
+<p class="hint">NeoPixel (GPIO48) у таблицю не входить — це вбудований світлодіод на платі DevKitC-1, дротів до нього немає.</p>
+
+<h2>Порядок першого запуску</h2>
+<ol class="steps">
+<li>Спершу не чіпайте датчик — зберіть і залийте поточну прошивку з робочим TFT (W1–W9). Переконайтесь, що стартова анімація й вбудований NeoPixel на платі світяться як раніше — це підтверджує, що нічого не зрушило.</li>
+<li>Коли прийде датчик AHT20+BMP280, підключіть лише живлення (W10–W11) і переконайтесь мультиметром, що на VCC модуля справді 3.3 V відносно GND.</li>
+<li>Підʼєднайте SDA/SCL (W12–W13) на обрані GPIO4/GPIO5 — або на ті, що виявляться вільними на вашій платі, якщо ці зайняті.</li>
+<li>Залийте прошивку, відкрийте Serial Monitor (115200 8N1) і перезавантажте пристрій: якщо побачите <code>⚠️ Climate sensor init failed</code>, датчик не відгукнувся на жодній з адрес 0x76/0x77 — перевірте пайку SDA/SCL/VCC/GND, перш ніж міняти піни в коді.</li>
+<li>Надішліть <code>#ANIM:sensor\n</code> (або кнопку «CLIMATE» в застосунку) і перевірте, що на екрані зʼявились три картки з показниками, які оновлюються раз на хвилину.</li>
+</ol>
+<div class="warn">
+<p style="margin:0">Номери GPIO для I²C (W12–W13) попередні й не перевірені на реальній платі — див. застереження вище. Решта пінів (TFT) уже перевірені й використовуються чинною прошивкою.</p>
+</div>
+</main>
+</body>
+</html>

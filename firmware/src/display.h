@@ -8,6 +8,14 @@
 #define PIN_NEOPIXEL 48
 #define BAUD_RATE 115200
 
+// AHT20+BMP280 climate sensor (I2C) — picked to avoid the SPI bus (10-14),
+// NeoPixel (48), backlight (21), native-USB-CDC (19-20), and the strapping
+// pins (0/3/45/46). Not yet verified against the physical board (sensor was
+// still in transit as of writing) — check these are actually broken out and
+// free before wiring, and update here if not.
+#define PIN_I2C_SDA 4
+#define PIN_I2C_SCL 5
+
 // ═════════════════════════════════════════════════════════════════════════════
 // LovyanGFX — ILI9341 320×240 SPI
 // ═════════════════════════════════════════════════════════════════════════════
@@ -49,15 +57,6 @@ public:
 LGFX_BeakBuddy lcd;
 Adafruit_NeoPixel pixels(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 
-// ── 128×64 "virtual" canvas — scaled up to the real screen ─────────────────
-#define OLED_W 128
-#define OLED_H 64
-#define OLED_SCALE 2
-const int OLED_DRAW_W = OLED_W * OLED_SCALE;
-const int OLED_DRAW_H = OLED_H * OLED_SCALE;
-const int OLED_DRAW_X = (320 - OLED_DRAW_W) / 2;
-const int OLED_DRAW_Y = (240 - OLED_DRAW_H) / 2;
-
 // ── Full-screen Pomodoro mode — no animation at all ─────────────────────────
 // Colors match the React app: #38bdf8 (work), #4ade80 (break)
 #define POMO_WORK_COLOR 0x3DFF
@@ -86,8 +85,3 @@ const int OLED_DRAW_Y = (240 - OLED_DRAW_H) / 2;
 #define CLAUDE_PCT_MED_COLOR 0xFDE4  // amber-400 (#fbbf24)
 #define CLAUDE_PCT_HIGH_COLOR 0xFB8E // red-400 (#f87171)
 
-// ── Buffer for colored (RGB565 delta+RLE) animations ────────────────────────
-// Must match FIRMWARE_CROP_W_MAX/H_MAX in convert_animation.mjs.
-#define COLOR_CROP_W_MAX 310
-#define COLOR_CROP_H_MAX 160
-#define COLOR_MAX_PIXELS (COLOR_CROP_W_MAX * COLOR_CROP_H_MAX)

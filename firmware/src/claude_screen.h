@@ -220,11 +220,13 @@ void setNeo(uint8_t r, uint8_t g, uint8_t b)
   pixels.show();
 }
 
-// Each state: frame array, count, delay, color, whether it loops
+// Each animated state loads a Taby GIF (tabyPlayer, taby_gif_player.h) by
+// id and a NeoPixel color. loop() ticks whichever one is current — see the
+// tabyIsLooping comment in gaze_state.h for how dedicated states differ
+// from #TABY: bonus ones.
 void enterState(GazeState s)
 {
   currentState = s;
-  activeIsColorPlayer = false; // mono by default; color states set this true themselves
 
   // Pomodoro draws to the WHOLE screen, other states only to a small central
   // area. So the whole screen is cleared on ANY state change — otherwise old
@@ -237,49 +239,44 @@ void enterState(GazeState s)
   switch (s)
   {
   case ST_STARTUP:
-    // startup01.h is also color now (RGB565 delta+RLE) — converted under the
-    // old BOOT_ANIM name, hence the constant prefix.
-    activeIsColorPlayer = true;
-    colorPlayer.load(BOOT_ANIM_frames, BOOT_ANIM_sizes, BOOT_ANIM_types,
-                     BOOT_ANIM_FRAME_COUNT, BOOT_ANIM_FPS,
-                     BOOT_ANIM_CROP_X, BOOT_ANIM_CROP_Y, BOOT_ANIM_CROP_W, BOOT_ANIM_CROP_H);
+    tabyPlayer.load("startup");
+    tabyIsLooping = false; // one-shot — loop() hands off to ST_IDLE when it finishes
     setNeo(128, 0, 12);
     break;
   case ST_IDLE:
-    // Color animation via ColorAnimPlayer
-    activeIsColorPlayer = true;
-    colorPlayer.load(IDLE_ANIM_frames, IDLE_ANIM_sizes, IDLE_ANIM_types,
-                     IDLE_ANIM_FRAME_COUNT, IDLE_ANIM_FPS,
-                     IDLE_ANIM_CROP_X, IDLE_ANIM_CROP_Y, IDLE_ANIM_CROP_W, IDLE_ANIM_CROP_H);
+    tabyPlayer.load("idle_01_loop");
+    tabyIsLooping = true;
     setNeo(128, 0, 128);
     break;
   case ST_FOCUS:
-    activeIsColorPlayer = true;
-    colorPlayer.load(WORK_ANIM_frames, WORK_ANIM_sizes, WORK_ANIM_types,
-                     WORK_ANIM_FRAME_COUNT, WORK_ANIM_FPS,
-                     WORK_ANIM_CROP_X, WORK_ANIM_CROP_Y, WORK_ANIM_CROP_W, WORK_ANIM_CROP_H);
+    tabyPlayer.load("working_loop");
+    tabyIsLooping = true;
     setNeo(0, 150, 255);
     break;
   case ST_RELAX:
-    activeIsColorPlayer = true;
-    colorPlayer.load(HAPPY_ANIM_frames, HAPPY_ANIM_sizes, HAPPY_ANIM_types,
-                     HAPPY_ANIM_FRAME_COUNT, HAPPY_ANIM_FPS,
-                     HAPPY_ANIM_CROP_X, HAPPY_ANIM_CROP_Y, HAPPY_ANIM_CROP_W, HAPPY_ANIM_CROP_H);
+    tabyPlayer.load("relaxing_01_loop");
+    tabyIsLooping = true;
     setNeo(0, 200, 0);
     break;
   case ST_LOVE:
-    activeIsColorPlayer = true;
-    colorPlayer.load(LOVE_ANIM_frames, LOVE_ANIM_sizes, LOVE_ANIM_types,
-                     LOVE_ANIM_FRAME_COUNT, LOVE_ANIM_FPS,
-                     LOVE_ANIM_CROP_X, LOVE_ANIM_CROP_Y, LOVE_ANIM_CROP_W, LOVE_ANIM_CROP_H);
+    // love_01 is a one-shot clip in Taby's own registry (it's meant as a
+    // bonus *reaction* there) — forced to loop here instead, since ST_LOVE
+    // is one of our persistent ambient states (no auto-revert, same as
+    // IDLE/FOCUS/RELAX) rather than a momentary pop-up.
+    tabyPlayer.load("love_01");
+    tabyIsLooping = true;
     setNeo(255, 0, 150);
     break;
   case ST_ERROR:
-    activeIsColorPlayer = true;
-    colorPlayer.load(ANGRY_ANIM_frames, ANGRY_ANIM_sizes, ANGRY_ANIM_types,
-                     ANGRY_ANIM_FRAME_COUNT, ANGRY_ANIM_FPS,
-                     ANGRY_ANIM_CROP_X, ANGRY_ANIM_CROP_Y, ANGRY_ANIM_CROP_W, ANGRY_ANIM_CROP_H);
+    tabyPlayer.load("angry_01_loop");
+    tabyIsLooping = true;
     setNeo(200, 0, 0);
+    break;
+  case ST_TABY:
+    // No tabyPlayer.load() here — playTabyAnimation() (taby_screen.h)
+    // already did it, and already set tabyIsLooping from the registry,
+    // before calling enterState(ST_TABY).
+    setNeo(160, 120, 220); // generic "Taby bonus" indicator — not severity-graded
     break;
   case ST_POMO_WORK:
     // Full screen, no animation — background+label drawn once here; the
@@ -323,6 +320,10 @@ void enterState(GazeState s)
   case ST_NOTIFY:
     drawNotifyScreen();
     setNeo((notifyColor >> 11 & 0x1F) << 3, (notifyColor >> 5 & 0x3F) << 2, (notifyColor & 0x1F) << 3);
+    break;
+  case ST_SENSOR:
+    drawSensorScreen();
+    setNeo(56, 189, 248); // same sky blue as pomo-work/#38bdf8 — matches SENSOR_HUMIDITY_COLOR
     break;
   }
 }

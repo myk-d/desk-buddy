@@ -96,6 +96,18 @@ void handlePacket(const String &cmd)
     return;
   }
 
+  if (cmd.startsWith("TABY:"))
+  {
+    if (pomoLocked)
+    {
+      Serial.println("🔒 pomo locked — TABY ignored");
+      return;
+    }
+    String id = cmd.substring(5);
+    playTabyAnimation(id.c_str());
+    return;
+  }
+
   if (cmd == "WIFI:SCAN")
   {
     wifiScanStart(); // non-blocking — result arrives later via wifiPoll()
@@ -203,6 +215,11 @@ void handlePacket(const String &cmd)
     {
       enterState(ST_POMO_LONGBREAK);
       Serial.println("✅ ANIM → pomolongbreak (full screen)");
+    }
+    else if (name == "sensor")
+    {
+      showSensorScreen(); // captures the current screen so it can return to it after SENSOR_DISPLAY_MS
+      Serial.println("✅ ANIM → sensor (full screen)");
     }
     else
     {

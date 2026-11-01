@@ -218,9 +218,15 @@ void handleNotifyHttp()
 
 // POST /update — OTA firmware flash over WiFi, sidestepping the USB
 // bootloader-reset dance entirely (this device's Linux USB-CDC driver
-// doesn't support the DTR/RTS toggling esptool normally relies on). The
-// partition table already has otadata+app0+app1 (confirmed before writing
-// this), so Update.h's usual ping-pong OTA mechanism works with no changes.
+// doesn't support the DTR/RTS toggling esptool normally relies on).
+//
+// DISABLED: the partition table used to have otadata+app0+app1, which is
+// what made Update.h's ping-pong OTA mechanism work. It's now a single
+// "factory" app partition + a big LittleFS partition for the Taby GIFs
+// (partitions_custom.csv) — no second app slot for Update.h to write into,
+// so esp_ota_get_next_update_partition() returns none and Update.begin()
+// would just fail. Kept as an explicit 501 below rather than silently
+// returning a generic "update failed" for an unrelated reason.
 //
 // Must arrive as multipart/form-data (a real file-upload body, not a raw
 // octet-stream POST) — WebServer's upload callback is the only path here
@@ -240,41 +246,17 @@ void handleUpdateHttp()
     beakServer.send(403, "text/plain", "forbidden");
     return;
   }
-  if (Update.hasError())
-  {
-    beakServer.send(500, "text/plain", "update failed");
-    return;
-  }
-  beakServer.send(200, "text/plain", "update ok, rebooting");
-  delay(500); // let the response actually flush before rebooting (same precedent as the #R serial command)
-  ESP.restart();
+  beakServer.send(501, "text/plain", "WiFi OTA disabled — single-partition build, flash via USB/BOOT button");
 }
 
 void handleUpdateUpload()
 {
+  // OTA is disabled (see handleUpdateHttp above) — just drain the upload
+  // body without touching Update.h, so a stray POST to /update doesn't
+  // erase/write anything.
   HTTPUpload &upload = beakServer.upload();
   if (upload.status == UPLOAD_FILE_START)
-  {
     otaAuthorized = checkBeakToken();
-    if (!otaAuthorized)
-      return; // rejected cleanly in handleUpdateHttp() once this (ignored) upload finishes
-    if (!Update.begin(UPDATE_SIZE_UNKNOWN))
-      Update.printError(Serial);
-  }
-  else if (upload.status == UPLOAD_FILE_WRITE)
-  {
-    if (!otaAuthorized)
-      return;
-    if (Update.write(upload.buf, upload.currentSize) != upload.currentSize)
-      Update.printError(Serial);
-  }
-  else if (upload.status == UPLOAD_FILE_END)
-  {
-    if (!otaAuthorized)
-      return;
-    if (!Update.end(true))
-      Update.printError(Serial);
-  }
 }
 
 // Registers every route + custom headers (X-Beak-Token). Called once, right

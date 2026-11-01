@@ -5,8 +5,9 @@
  * ║                                                            ║
  * ║  Custom build, no servo/U8g2. WiFi is optional, off by     ║
  * ║  default (see wifi_manager.h).                             ║
- * ║  Content is temporary — animations from Tabbie (idle/      ║
- * ║  focus/relax/love/startup/angry), file format unchanged.   ║
+ * ║  Every character animation — idle/focus/relax/love/error/  ║
+ * ║  startup, and ~84 "bonus" ones — is a Taby GIF played      ║
+ * ║  from LittleFS (see taby_gif_player.h/taby_screen.h).      ║
  * ╚══════════════════════════════════════════════════════════╝
  *
  * Protocol (USB Serial, 115200 8N1):
@@ -15,7 +16,7 @@
  *   #ANIM:focus\n     — focus mode
  *   #ANIM:relax\n     — break/relax
  *   #ANIM:love\n      — positive feedback
- *   #ANIM:error\n     — error (static image, not an animation)
+ *   #ANIM:error\n     — error
  *   #R\n              — software restart
  *   #VERSION\n        — returns the firmware version
  *   #CLAUDE:<sub>\n   — Claude Code state: working/done/waiting/idle (full screen)
@@ -29,6 +30,19 @@
  *   #WIFI:CONNECT:<token>:<ssid>,<pass>\n — saves credentials and connects, replies WIFI_STATUS:...
  *   #WIFI:STATUS\n                      — current state, replies WIFI_STATUS:...
  *   #WIFI:FORGET\n                      — clears saved credentials, disconnects
+ *   #ANIM:sensor\n       — Climate: AHT20+BMP280 temp/humidity/pressure (full screen,
+ *                     15s then auto-reverts to whatever was showing before); also pops
+ *                     up on its own every 5 min when idle, see pollSensorAutoShow() in
+ *                     sensor_screen.h
+ *   #TABY:<id>\n         — plays one of ~84 "bonus" character animations ported from the
+ *                     original Taby device (e.g. basketball_dunk, boxing, fishing_long,
+ *                     thumbs_up...) — not one of the 6 states above, which have their own
+ *                     fixed Taby id instead (see enterState() in claude_screen.h). Looping
+ *                     ids become the new ambient state (like idle/focus); one-shot ids
+ *                     auto-revert to whatever was showing before once they finish. Full
+ *                     id list: taby_registry.h.
+ *                     Also fires on its own, at a random moment every 3-10 min, with a
+ *                     random one-shot reaction — see pollTabyRandomShow() in taby_screen.h.
  *
  * Once connected to WiFi, a local web server comes up (port 80, mDNS
  * "beak-buddy.local") with POST /claude-state and /claude-usage — the same
@@ -43,10 +57,12 @@
  * The code is split into files by purpose (all header-only, included
  * directly here, one translation unit, same as before):
  *   display.h         — display/pins/colors
- *   anim_players.h     — animation players (mono + color)
  *   gaze_state.h        — GazeState enum + global state
  *   pomodoro_screen.h   — Pomodoro screen
  *   claude_screen.h     — Claude Code screen + enterState() (state dispatcher)
+ *   sensor_screen.h      — Climate (AHT20+BMP280) screen
+ *   taby_gif_player.h    — GIF decode/draw (LittleFS, AnimatedGIF) — every character animation goes through this
+ *   taby_screen.h        — playTabyAnimation()/pollTabyRandomShow() (#TABY:<id> + random pop-ups)
  *   wifi_manager.h      — WiFi + local web server
  *   serial_protocol.h   — serial protocol (handlePacket/readSerial)
  */
@@ -59,17 +75,8 @@
 #include <LovyanGFX.hpp>
 #include <Adafruit_NeoPixel.h>
 
-// current animations
-#include "boot.h"
-#include "idle.h"
-#include "work.h"
-#include "happy.h"
-#include "angry.h"
-#include "love.h"
-
-#include "display.h"        // LGFX_BeakBuddy, lcd, pixels, OLED_*, colors
-#include "anim_players.h"    // MonoCanvas/canvas, AnimPlayer/player, ColorAnimPlayer/colorPlayer
-#include "gaze_state.h"      // GazeState enum + currentState/activeIsColorPlayer/pomoLocked/claude* globals
+#include "display.h"        // LGFX_BeakBuddy, lcd, pixels, colors
+#include "gaze_state.h"      // GazeState enum + currentState/pomoLocked/claude*/taby* globals
 
 // WiFi + local web server — so Claude Code can update the screen directly,
 // even when the desktop app is closed. Forward-declared here because
@@ -81,13 +88,23 @@ void applyClaudeUsage(float fiveHourPct, long fiveHourSecs, float sevenDayPct, l
 
 #include "pomodoro_screen.h"  // drawPomodoroBackground/drawPomodoroTime
 
-// enterState() (claude_screen.h) calls drawNotifyScreen() — defined below in
-// notify_screen.h, which itself needs enterState() (calls it from
-// applyNotify()). Same mutual-dependency shape as applyClaudeState/
-// applyClaudeUsage above: forward-declare the one that's needed first.
+// taby_screen.h's playTabyAnimation() calls enterState() (defined below in
+// claude_screen.h) — same forward-declare-what's-needed-early shape as
+// applyClaudeState/applyClaudeUsage above.
+void enterState(GazeState s);
+#include "taby_screen.h"      // TABY_REGISTRY/findTabyAnimation/playTabyAnimation/pollTabyRandomShow — the ~80 "bonus" Taby animations
+
+// enterState() (claude_screen.h) calls drawNotifyScreen()/drawSensorScreen()
+// — defined below in notify_screen.h/sensor_screen.h, which themselves need
+// enterState() (notify_screen.h calls it from applyNotify(); sensor_screen.h
+// doesn't, but is included after for consistency). Same mutual-dependency
+// shape as applyClaudeState/applyClaudeUsage above: forward-declare the ones
+// needed first.
 void drawNotifyScreen();
+void drawSensorScreen();
 #include "claude_screen.h"    // drawClaudeScreen/drawClaudeUsageBars/enterState/applyClaudeState/applyClaudeUsage
 #include "notify_screen.h"    // drawNotifyScreen/applyNotify/pollNotifyTimeout
+#include "sensor_screen.h"    // drawSensorScreen/sensorsBegin/pollSensorRead/pollSensorTimeout/pollSensorAutoShow
 #include "serial_protocol.h"  // handlePacket/readSerial
 
 void setup()
@@ -104,16 +121,18 @@ void setup()
   lcd.setRotation(3);
   lcd.fillScreen(0x0000);
 
-  canvas.begin();
-  if (!colorPlayer.begin())
+  if (!LittleFS.begin())
   {
-    Serial.println("⚠️ ColorAnimPlayer: failed to allocate buffer (PSRAM?)");
+    Serial.println("⚠️ LittleFS mount failed — did you run `pio run --target uploadfs`? No character animations (idle/focus/relax/love/error/startup/#TABY:<id>) will be available.");
   }
+  tabyGif.begin();
+  randomSeed(esp_random()); // hardware RNG — otherwise random() follows the same sequence every boot
 
   enterState(ST_STARTUP);
   Serial.println("READY");
   Serial.println("FIRMWARE:" FIRMWARE_VERSION);
 
+  sensorsBegin();
   wifiTryAutoConnect();
 }
 
@@ -123,21 +142,28 @@ void loop()
   wifiPoll(); // always, regardless of currentState — otherwise HTTP requests aren't handled during Pomodoro/Claude screens
   pollClaudeDoneTimeout(); // same reason — otherwise "Done" would never fade without the app running
   pollNotifyTimeout(); // same reason — otherwise the notify screen would never fade without the app running
+  pollSensorRead(); // same reason — otherwise the climate screen would never refresh past its first reading
+  pollSensorTimeout(); // same reason — otherwise the climate screen would never auto-revert to idle
+  pollSensorAutoShow(); // same reason — otherwise Climate would only ever show when manually triggered
   pollClaudeActivityPulse(); // same reason — the NeoPixel needs to breathe while currentState == ST_CLAUDE
+  pollTabyRandomShow(); // same reason — otherwise the random "just because" reactions would never fire
 
-  // Pomodoro / Claude Code / Notify full-screen — no animation, nothing to tick
-  if (currentState == ST_POMO_WORK || currentState == ST_POMO_BREAK || currentState == ST_POMO_LONGBREAK || currentState == ST_CLAUDE || currentState == ST_NOTIFY)
+  // Pomodoro / Claude Code / Notify / Climate full-screen — no character
+  // animation to tick
+  if (currentState == ST_POMO_WORK || currentState == ST_POMO_BREAK || currentState == ST_POMO_LONGBREAK || currentState == ST_CLAUDE || currentState == ST_NOTIFY || currentState == ST_SENSOR)
     return;
 
-  bool loopAnim = (currentState != ST_STARTUP); // the startup animation only plays once
-  bool finished;
-  if (activeIsColorPlayer)
-    finished = colorPlayer.tick(loopAnim);
-  else
-    finished = (currentState == ST_ERROR) ? false : player.tick(loopAnim);
-
-  if (finished && currentState == ST_STARTUP)
+  // Every remaining state — the 6 dedicated ones (idle/focus/relax/love/
+  // error/startup) and ST_TABY (#TABY:<id> bonus animations) — is a Taby
+  // GIF ticked here. tabyIsLooping (set in enterState()/playTabyAnimation())
+  // says whether reaching the end of the clip means "loop back to frame 0"
+  // or "this cycle is done".
+  bool finishedCycle = tabyPlayer.tick(tabyIsLooping);
+  if (finishedCycle)
   {
-    enterState(ST_IDLE); // startup animation finished → move to idle
+    if (currentState == ST_STARTUP)
+      enterState(ST_IDLE); // startup animation finished → move to idle
+    else if (currentState == ST_TABY && !tabyIsLooping)
+      enterState(stateBeforeTaby); // one-shot bonus reaction finished → back to whatever was showing before
   }
 }
