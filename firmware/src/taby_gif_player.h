@@ -5,7 +5,12 @@
 // Kept at their original 280x456 resolution on disk (no flash-size pressure
 // now that they live in a filesystem partition, not PROGMEM) — downscaled
 // 2x by nearest-neighbor sampling right in the draw callback, so no extra
-// frame buffer is needed. 280x456 -> 140x228, centered on the 320x240 panel.
+// frame buffer is needed.
+//
+// The source GIFs are portrait (280x456) but come out rotated 90° on our
+// panel as-is (confirmed against the real device) — rotated 90°
+// counterclockwise here to compensate, which also turns the on-screen
+// footprint landscape: 456x280 scaled down -> 228x140, centered.
 
 #include <AnimatedGIF.h>
 #include <LittleFS.h>
@@ -14,10 +19,12 @@ AnimatedGIF tabyGif;
 File tabyGifFile;
 
 const int TABY_DRAW_SCALE = 2; // nearest-neighbor downscale factor
-const int TABY_DRAW_W = 280 / TABY_DRAW_SCALE;  // 140
-const int TABY_DRAW_H = 456 / TABY_DRAW_SCALE;  // 228
-const int TABY_DRAW_X = (320 - TABY_DRAW_W) / 2; // 90
-const int TABY_DRAW_Y = (240 - TABY_DRAW_H) / 2; // 6
+const int TABY_SRC_W = 280;  // GIF's own native canvas, pre-rotation
+const int TABY_SRC_H = 456;
+const int TABY_DRAW_W = TABY_SRC_H / TABY_DRAW_SCALE; // 228 — swapped: rotating 90° swaps width/height
+const int TABY_DRAW_H = TABY_SRC_W / TABY_DRAW_SCALE; // 140
+const int TABY_DRAW_X = (320 - TABY_DRAW_W) / 2; // 46
+const int TABY_DRAW_Y = (240 - TABY_DRAW_H) / 2; // 50
 
 void *GIFOpenFile(const char *fname, int32_t *pSize)
 {
@@ -56,10 +63,21 @@ int32_t GIFSeekFile(GIFFILE *pFile, int32_t iPosition)
   return iPosition;
 }
 
-// One decoded (and already downscaled) scanline worth of RGB565 pixels.
-// TABY_DRAW_W (140) is the ceiling — real source rows are at most 280px wide.
-static uint16_t tabyScanline[TABY_DRAW_W];
+// One decoded (and already downscaled) column worth of RGB565 pixels — each
+// GIFDraw call is one source scanline (fixed src Y), which after a 90°
+// rotation becomes one destination COLUMN (fixed dest X), not a row.
+// TABY_SRC_W/SCALE (140) is the ceiling — real source rows are at most
+// 280px wide.
+static uint16_t tabyScanline[TABY_SRC_W / TABY_DRAW_SCALE + 1];
 
+// 90° CCW rotation: for a source pixel at (srcX, srcY) in the TABY_SRC_W x
+// TABY_SRC_H canvas, the rotated+scaled destination is
+//   destX = TABY_DRAW_X + srcY / SCALE                (constant per GIFDraw call)
+//   destY = TABY_DRAW_Y + (TABY_SRC_W - 1 - srcX) / SCALE   (DEcreases as srcX increases)
+// so a whole scanline (increasing srcX) maps to one column, top-to-bottom
+// in REVERSE srcX order — everything below walks srcX from high to low to
+// build tabyScanline in increasing-destY order, exactly what
+// pushImage(w=1, h=N) expects to paint top-to-bottom.
 void GIFDraw(GIFDRAW *pDraw)
 {
   if (pDraw->y % TABY_DRAW_SCALE != 0)
@@ -68,8 +86,8 @@ void GIFDraw(GIFDRAW *pDraw)
   uint8_t *s = pDraw->pPixels;
   uint16_t *usPalette = pDraw->pPalette;
   int srcWidth = pDraw->iWidth;
-  int y = TABY_DRAW_Y + (pDraw->iY + pDraw->y) / TABY_DRAW_SCALE;
-  int destX0 = TABY_DRAW_X + pDraw->iX / TABY_DRAW_SCALE;
+  int srcY = pDraw->iY + pDraw->y;
+  int destX = TABY_DRAW_X + srcY / TABY_DRAW_SCALE;
 
   // Frames with disposal method 2 restore to the background color first —
   // same background-restore-before-draw handling as the library's own
@@ -84,32 +102,34 @@ void GIFDraw(GIFDRAW *pDraw)
 
   if (pDraw->ucHasTransparency)
   {
-    // Column-downscale + transparency in one pass: walk in steps of
-    // TABY_DRAW_SCALE, batching contiguous opaque runs into pushImage calls
-    // and skipping transparent ones (leaving whatever's already on screen —
-    // enterState()'s fillScreen(0x0000) already cleared it to black once).
-    int x = 0;
-    while (x < srcWidth)
+    int x = srcWidth - 1;
+    while (x >= 0)
     {
-      int dstStart = x / TABY_DRAW_SCALE;
       int count = 0;
-      while (x < srcWidth && s[x] != pDraw->ucTransparent)
+      int runStartDestY = -1;
+      while (x >= 0 && s[x] != pDraw->ucTransparent)
       {
+        int srcX = pDraw->iX + x;
+        int destY = TABY_DRAW_Y + (TABY_SRC_W - 1 - srcX) / TABY_DRAW_SCALE;
+        if (count == 0)
+          runStartDestY = destY; // smallest destY of this run — pushImage's top
         tabyScanline[count++] = usPalette[s[x]];
-        x += TABY_DRAW_SCALE;
+        x -= TABY_DRAW_SCALE;
       }
       if (count)
-        lcd.pushImage(destX0 + dstStart, y, count, 1, tabyScanline);
-      while (x < srcWidth && s[x] == pDraw->ucTransparent)
-        x += TABY_DRAW_SCALE;
+        lcd.pushImage(destX, runStartDestY, 1, count, tabyScanline);
+      while (x >= 0 && s[x] == pDraw->ucTransparent)
+        x -= TABY_DRAW_SCALE;
     }
   }
   else
   {
     int count = 0;
-    for (int x = 0; x < srcWidth; x += TABY_DRAW_SCALE)
+    for (int x = srcWidth - 1; x >= 0; x -= TABY_DRAW_SCALE)
       tabyScanline[count++] = usPalette[s[x]];
-    lcd.pushImage(destX0, y, count, 1, tabyScanline);
+    int lastSrcX = pDraw->iX + srcWidth - 1;
+    int destYStart = TABY_DRAW_Y + (TABY_SRC_W - 1 - lastSrcX) / TABY_DRAW_SCALE;
+    lcd.pushImage(destX, destYStart, 1, count, tabyScanline);
   }
 }
 

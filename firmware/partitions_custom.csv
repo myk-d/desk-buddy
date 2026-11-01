@@ -13,7 +13,13 @@
 # slot to flash into — this device is now USB/BOOT-button-only for
 # firmware updates, same as it already was for everything except that one
 # endpoint. See firmware/CLAUDE.md.
+# The data partition is named "spiffs" (not "storage") on purpose, even
+# though it holds a LittleFS filesystem — Arduino-ESP32's LittleFS::begin()
+# hardcodes "spiffs" as its default partitionLabel argument, a historical
+# carryover. A different name here means LittleFS.begin() silently fails to
+# find the partition — every GIF then "fails to load" even though uploadfs
+# wrote them correctly. Hit this directly: see conversation around 2026-11-01.
 nvs,      data, nvs,      0x9000,   0x5000,
 factory,  app,  factory,  0x10000,  0x400000,
-storage,  data, littlefs, 0x410000, 0xB80000,
+spiffs,   data, littlefs, 0x410000, 0xB80000,
 coredump, data, coredump, 0xF90000, 0x10000,
