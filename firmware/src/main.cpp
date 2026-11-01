@@ -146,6 +146,7 @@ void loop()
   pollSensorTimeout(); // same reason — otherwise the climate screen would never auto-revert to idle
   pollSensorAutoShow(); // same reason — otherwise Climate would only ever show when manually triggered
   pollClaudeActivityPulse(); // same reason — the NeoPixel needs to breathe while currentState == ST_CLAUDE
+  pollClaudeAnim(); // same reason — drives the claude_in/claude_loop overlay on top of the usage dashboard
   pollTabyRandomShow(); // same reason — otherwise the random "just because" reactions would never fire
 
   // Pomodoro / Claude Code / Notify / Climate full-screen — no character

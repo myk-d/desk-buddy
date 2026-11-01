@@ -249,10 +249,26 @@ void enterState(GazeState s)
     setNeo(128, 0, 128);
     break;
   case ST_FOCUS:
-    tabyPlayer.load("working_loop");
+  {
+    // Random pick among every looping animation in Taby's "Work & focus"
+    // set, rerolled each time FOCUS is (re-)entered (e.g. switching back to
+    // an IDE after a break) — not just the one working_loop clip. The
+    // one-shot transitions in that same category (working_in, lockin,
+    // posture_check, copy_paste, workspaces_in) are skipped: FOCUS is a
+    // persistent ambient state here, nothing reverts it like the #TABY:
+    // bonus mechanism does for one-shots.
+    static const char *FOCUS_ANIM_IDS[] = {
+        "working_loop", "working_laptop_loop", "working_laptop_bored_loop",
+        "working_laptop_excited_loop", "working_laptop_normal_loop",
+        "busy_loop", "workspaces_loop", "searching_loop",
+        "calm_work_low_f000", "calm_work_medium_f000", "calm_work_high_f000",
+    };
+    const int FOCUS_ANIM_COUNT = sizeof(FOCUS_ANIM_IDS) / sizeof(FOCUS_ANIM_IDS[0]);
+    tabyPlayer.load(FOCUS_ANIM_IDS[random(FOCUS_ANIM_COUNT)]);
     tabyIsLooping = true;
     setNeo(0, 150, 255);
     break;
+  }
   case ST_RELAX:
     tabyPlayer.load("relaxing_01_loop");
     tabyIsLooping = true;
@@ -328,6 +344,60 @@ void enterState(GazeState s)
   }
 }
 
+// Shows one of Claude's own character animations (claude_in/claude_loop) in
+// place of the usage cards — currentState stays ST_CLAUDE, this is purely a
+// what's-drawn-right-now overlay, not a state change. pollClaudeAnim()
+// (below) reverts to drawClaudeScreen() once it's done.
+void playClaudeAnim(const char *id, bool loop)
+{
+  lcd.fillRect(0, 30, 320, 210, CLAUDE_BG_DARK); // clear the card area so the overlay isn't drawn on top of stale cards
+  tabyPlayer.load(id);
+  claudeAnimLoops = loop;
+  claudeAnimActive = true;
+  claudeAnimShownAtMs = millis();
+}
+
+// Non-blocking — called every loop() iteration. Two jobs: (1) tick/revert
+// whatever Claude anim is currently overlaying the dashboard, (2) once
+// that's not showing, occasionally start a fresh one (claude_loop) while
+// Claude is actively "working" — the same "mix animations in with the
+// dashboard" idea as pollTabyRandomShow(), just scoped to Claude's own two
+// animations instead of the ~84 bonus ones.
+void pollClaudeAnim()
+{
+  if (currentState != ST_CLAUDE)
+  {
+    claudeAnimActive = false; // left the Claude screen entirely — nothing to revert later
+    return;
+  }
+
+  if (claudeAnimActive)
+  {
+    bool finishedCycle = tabyPlayer.tick(claudeAnimLoops);
+    bool timeUp = claudeAnimLoops ? (millis() - claudeAnimShownAtMs > CLAUDE_ANIM_DISPLAY_MS) : finishedCycle;
+    if (timeUp)
+    {
+      claudeAnimActive = false;
+      drawClaudeScreen(); // back to the usage cards
+    }
+    return;
+  }
+
+  if (claudeSubState != 1)
+    return; // only interleave claude_loop while actively working
+  if (nextClaudeAnimIntervalMs == 0)
+  {
+    lastClaudeAnimAtMs = millis();
+    nextClaudeAnimIntervalMs = random(CLAUDE_ANIM_MIN_MS, CLAUDE_ANIM_MAX_MS);
+    return;
+  }
+  if (millis() - lastClaudeAnimAtMs < nextClaudeAnimIntervalMs)
+    return;
+  lastClaudeAnimAtMs = millis();
+  nextClaudeAnimIntervalMs = random(CLAUDE_ANIM_MIN_MS, CLAUDE_ANIM_MAX_MS);
+  playClaudeAnim("claude_loop", true);
+}
+
 // Shared code for #CLAUDE:/#USAGE: (serial) and /claude-state, /claude-usage
 // (WiFi HTTP, see wifi_manager.h) — one single path for applying an update,
 // regardless of where it came from.
@@ -357,7 +427,15 @@ void applyClaudeState(int sub)
   if (alreadyThere)
     return;
 
+  claudeAnimActive = false; // a real transition is happening — drop any stale overlay, enterState() repaints fresh below
   enterState(target);
+
+  // Freshly (re-)entered "working" (not just another PreToolUse ping while
+  // already there, see alreadyThere above) — brief claude_in intro before
+  // settling into the dashboard, same spirit as the startup animation
+  // handing off to idle.
+  if (sub == 1)
+    playClaudeAnim("claude_in", false);
 }
 
 // NeoPixel activity indicator while Claude is "working" or "thinking" — a

@@ -36,6 +36,18 @@ const unsigned long CLAUDE_DONE_DISPLAY_MS = 3000;
 // static solid color while working looked identical whether Claude was mid
 // tool-call-burst or idling on one slow command.
 unsigned long lastClaudeWorkingPingMs = 0;
+// Claude's own character animations (claude_in/claude_loop) shown as a
+// temporary overlay on top of the usage-cards dashboard (see
+// playClaudeAnim()/pollClaudeAnim() in claude_screen.h) — currentState stays
+// ST_CLAUDE throughout, this doesn't change state like #TABY:<id> does.
+bool claudeAnimActive = false;
+bool claudeAnimLoops = false;
+unsigned long claudeAnimShownAtMs = 0;
+const unsigned long CLAUDE_ANIM_DISPLAY_MS = 4000; // how long a looping interlude (claude_loop) shows before reverting to the dashboard
+unsigned long lastClaudeAnimAtMs = 0;
+const unsigned long CLAUDE_ANIM_MIN_MS = 60000;  // 1 min
+const unsigned long CLAUDE_ANIM_MAX_MS = 180000; // 3 min
+unsigned long nextClaudeAnimIntervalMs = 0;
 float claudeFiveHourPct = -1;  // -1 = no data yet
 float claudeSevenDayPct = -1;
 long claudeFiveHourSecsLeft = -1;  // seconds until limit resets (the app computes this, not the firmware)

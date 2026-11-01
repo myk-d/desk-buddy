@@ -42,6 +42,10 @@ This is why the partition table changed from the stock dual-OTA `default_16MB.cs
 
 Besides `#TABY:<id>` (deliberate trigger), `pollTabyRandomShow()` (`taby_screen.h`) also fires on its own — a random *one-shot* bonus reaction (never an ambient loop) every 3-10 minutes (rerolled each time, not a fixed interval), while an ambient state (idle/focus/relax/love/error) is already showing. Never interrupts Pomodoro/Claude/Notify/Climate/an already-running Taby animation/startup.
 
+`ST_FOCUS` picks randomly among every *looping* animation in Taby's "Work & focus" set (`working_loop`, the `working_laptop_*_loop` variants, `busy_loop`, `workspaces_loop`, `searching_loop`, the three `calm_work_*_f000` stills) each time it's (re-)entered — not just `working_loop` — see the `FOCUS_ANIM_IDS` array in `enterState()`. The one-shot transitions in that category (`working_in`, `lockin`, `posture_check`, `copy_paste`, `workspaces_in`) are skipped: FOCUS has to stay put with nothing to auto-revert it, the way `#TABY:`'s one-shots do.
+
+The `ST_CLAUDE` dashboard (two usage-ring cards) similarly gets Claude's own two animations mixed in (`playClaudeAnim()`/`pollClaudeAnim()`, `claude_screen.h`) — `claude_in` plays once as a brief intro whenever Claude genuinely (re-)starts working (not on every repeat "working" ping from PreToolUse — `applyClaudeState()`'s `alreadyThere` check filters those out already), then `pollClaudeAnim()` reverts to the dashboard; while still "working", `claude_loop` interleaves in for `CLAUDE_ANIM_DISPLAY_MS` (4s) every 1-3 minutes (rerolled, same pattern as the Taby random pop-ups), then reverts again. `currentState` stays `ST_CLAUDE` throughout — this is a what's-drawn overlay, not a state change, so Claude's own lock/auto-revert/severity-color logic is untouched.
+
 ## Serial protocol (USB, 115200 8N1)
 
 Packets are `#COMMAND:args\n`. Current commands:
