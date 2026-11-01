@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { WifiSetup } from './WifiSetup';
+import { AntigravityPanel } from './AntigravityPanel';
 import type { ClaudeUsage } from '../types';
 
 function fmtResetsIn(unixSeconds: number | null): string | null {
@@ -185,6 +186,16 @@ export function DevicePage({ connected, onReset }: { connected: boolean; onReset
 					<p className="text-sm text-stone-500">Checking…</p>
 				)}
 			</div>
+
+			{/* ── Antigravity ── */}
+			<div>
+				<h2 className="text-xl font-bold text-stone-900">Antigravity</h2>
+				<p className="mb-4 mt-1 text-sm text-stone-500">
+					Usage/quota for Google's agentic IDE (and its VS Code extension) — read locally, unofficial
+				</p>
+			</div>
+
+			<AntigravityPanel />
 
 			{/* ── WiFi ── */}
 			<div>

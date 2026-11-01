@@ -41,6 +41,10 @@ contextBridge.exposeInMainWorld('api', {
 			ipcRenderer.on('claude:usage', (_, u) => cb(u)),
 		onSource: (cb: (source: string) => void) => ipcRenderer.on('claude:source', (_, s) => cb(s)),
 	},
+	antigravity: {
+		getStatus: () => ipcRenderer.invoke('antigravity:getStatus'),
+		onStatus: (cb: (status: unknown) => void) => ipcRenderer.on('antigravity:status', (_, status) => cb(status)),
+	},
 	pomodoroPresets: crudApi('pomodoroPresets'),
 	pomodoroSettings: valueApi('pomodoroSettings'),
 	pomodoroStats: valueApi('pomodoroStats'),

@@ -9,6 +9,32 @@ export interface ClaudeUsage {
 	sevenDayResetsAt: number | null;
 }
 
+// ── Antigravity (Google's agentic IDE) ──────────────────────────────────────
+// Read from its local language server — unofficial/undocumented, see
+// electron/antigravity.ts for the full explanation and caveats.
+
+export interface AntigravityModelQuota {
+	modelId: string;
+	label: string;
+	remainingFraction: number; // 0–1
+	resetAt: number | null; // epoch ms
+	isExhausted: boolean;
+}
+
+export interface AntigravityPromptCredits {
+	used: number;
+	limit: number;
+	remaining: number;
+}
+
+export interface AntigravityStatus {
+	connected: boolean;
+	email: string | null;
+	tierName: string | null;
+	promptCredits: AntigravityPromptCredits | null;
+	models: AntigravityModelQuota[];
+}
+
 // ── Pomodoro ─────────────────────────────────────────────────────────────────
 
 export type PomodoroPhase = 'focus' | 'shortBreak' | 'longBreak';
@@ -105,6 +131,10 @@ declare global {
 				onState: (cb: (state: string) => void) => void;
 				onUsage: (cb: (u: ClaudeUsage) => void) => void;
 				onSource: (cb: (source: string) => void) => void;
+			};
+			antigravity: {
+				getStatus: () => Promise<AntigravityStatus>;
+				onStatus: (cb: (status: AntigravityStatus) => void) => void;
 			};
 			pomodoroPresets: CrudApi<PomodoroPreset>;
 			pomodoroSettings: ValueApi<PomodoroSettings>;

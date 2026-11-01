@@ -9,6 +9,7 @@ import { homedir } from 'os';
 import { SerialPort } from 'serialport';
 import { fileURLToPath } from 'url';
 import { createJsonStore, createJsonValueStore } from './store';
+import { getAntigravityStatus } from './antigravity';
 import type { PomodoroPreset, PomodoroSettings, PomodoroStats, WifiConfig, WifiNetwork, WifiConnectResult, WifiStatus } from '../src/types';
 
 const DEFAULT_POMODORO_SETTINGS: PomodoroSettings = {
@@ -894,6 +895,19 @@ function pollClaudeUsageFromApi(): void {
 setTimeout(pollClaudeUsageFromApi, 5000);
 setInterval(pollClaudeUsageFromApi, 6 * 60_000);
 
+// Antigravity has no hooks/statusline to push updates to us like Claude Code
+// does — this is a plain poll of its local language server (see
+// antigravity.ts), cheap enough (localhost only, cached connection) to run
+// every 30s regardless of whether Antigravity is even running.
+function pollAntigravityStatus(): void {
+	getAntigravityStatus().then((status) => {
+		mainWindow?.webContents.send('antigravity:status', status);
+	});
+}
+
+setTimeout(pollAntigravityStatus, 5000);
+setInterval(pollAntigravityStatus, 30_000);
+
 // Wires list/create/update/remove IPC handlers for one entity-collection
 // store, following the exact channel-naming convention already used by the
 // (now-removed) todos:*/pomodoros:* handlers — `${namespace}:list` etc.
@@ -1120,6 +1134,10 @@ ipcMain.handle('claude:setup', () => { setupClaudeHooks(); return true; });
 ipcMain.handle('claude:getUsage', () => ({ ...claudeUsage }));
 ipcMain.handle('claude:getSource', () => claudeCodeSource);
 ipcMain.handle('claude:getAccountEmail', () => readClaudeAccountEmail());
+
+// forceRefresh (true) — a stale cached "not connected" result right after
+// the user opens Antigravity and clicks "Refresh" would be confusing.
+ipcMain.handle('antigravity:getStatus', () => getAntigravityStatus(true));
 
 // Fires a synthetic "working" state through the exact same path a real
 // Claude Code hook would use (local relay or straight to the device over
