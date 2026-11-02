@@ -126,6 +126,8 @@ void setup()
     Serial.println("⚠️ LittleFS mount failed — did you run `pio run --target uploadfs`? No character animations (idle/focus/relax/love/error/startup/#TABY:<id>) will be available.");
   }
   tabyGif.begin();
+  if (!tabySpriteBegin())
+    Serial.println("⚠️ Taby sprite: failed to allocate PSRAM buffer");
   randomSeed(esp_random()); // hardware RNG — otherwise random() follows the same sequence every boot
 
   enterState(ST_STARTUP);

@@ -220,6 +220,31 @@ void setNeo(uint8_t r, uint8_t g, uint8_t b)
   pixels.show();
 }
 
+// A curated palette rather than full random(0,255) per channel — avoids
+// muddy/near-black/near-white results. Used for every ambient/reaction
+// state's NeoPixel *except* IDLE (fixed purple) and ST_CLAUDE (its own
+// severity-graded scheme, untouched) — rerolled each time the state is
+// (re-)entered, same spirit as the animation-variety pickers.
+void setRandomNeo()
+{
+  static const uint8_t PALETTE[][3] = {
+      {255, 0, 0},    // red
+      {255, 90, 0},   // orange
+      {255, 190, 0},  // yellow
+      {0, 220, 0},    // green
+      {0, 220, 160},  // teal
+      {0, 160, 255},  // sky blue
+      {40, 40, 255},  // blue
+      {150, 0, 255},  // violet
+      {230, 0, 230},  // magenta
+      {255, 0, 120},  // pink
+      {220, 220, 220}, // white
+  };
+  const int count = sizeof(PALETTE) / sizeof(PALETTE[0]);
+  const uint8_t *c = PALETTE[random(count)];
+  setNeo(c[0], c[1], c[2]);
+}
+
 // Each animated state loads a Taby GIF (tabyPlayer, taby_gif_player.h) by
 // id and a NeoPixel color. loop() ticks whichever one is current — see the
 // tabyIsLooping comment in gaze_state.h for how dedicated states differ
@@ -241,38 +266,50 @@ void enterState(GazeState s)
   case ST_STARTUP:
     tabyPlayer.load("startup");
     tabyIsLooping = false; // one-shot — loop() hands off to ST_IDLE when it finishes
-    setNeo(128, 0, 12);
+    setRandomNeo();
     break;
   case ST_IDLE:
     tabyPlayer.load("idle_01_loop");
     tabyIsLooping = true;
-    setNeo(128, 0, 128);
+    setNeo(128, 0, 128); // fixed purple — the one ambient state that doesn't randomize
     break;
   case ST_FOCUS:
   {
-    // Random pick among every looping animation in Taby's "Work & focus"
-    // set, rerolled each time FOCUS is (re-)entered (e.g. switching back to
-    // an IDE after a break) — not just the one working_loop clip. The
-    // one-shot transitions in that same category (working_in, lockin,
-    // posture_check, copy_paste, workspaces_in) are skipped: FOCUS is a
-    // persistent ambient state here, nothing reverts it like the #TABY:
-    // bonus mechanism does for one-shots.
-    static const char *FOCUS_ANIM_IDS[] = {
-        "working_loop", "working_laptop_loop", "working_laptop_bored_loop",
-        "working_laptop_excited_loop", "working_laptop_normal_loop",
-        "busy_loop", "workspaces_loop", "searching_loop",
-        "calm_work_low_f000", "calm_work_medium_f000", "calm_work_high_f000",
+    // Three main ones (bored/excited/normal) round-robin in sequence each
+    // time FOCUS is (re-)entered, so it's not always the same clip — most
+    // of the time (65%) the rotation just advances; the rest of the time a
+    // different "Work & focus" loop gets thrown in instead, for variety,
+    // without breaking the round-robin's position. working_laptop_in/loop
+    // and the calm_work_*_f000 stills were dropped from the pool entirely
+    // (explicitly asked). One-shot transitions in this category
+    // (working_in, lockin, posture_check, copy_paste, workspaces_in) are
+    // still skipped: FOCUS is a persistent ambient state, nothing reverts
+    // it like the #TABY: bonus mechanism does for one-shots.
+    static const char *FOCUS_MAIN_IDS[] = {
+        "working_laptop_bored_loop", "working_laptop_excited_loop", "working_laptop_normal_loop",
     };
-    const int FOCUS_ANIM_COUNT = sizeof(FOCUS_ANIM_IDS) / sizeof(FOCUS_ANIM_IDS[0]);
-    tabyPlayer.load(FOCUS_ANIM_IDS[random(FOCUS_ANIM_COUNT)]);
+    static const char *FOCUS_OTHER_IDS[] = {
+        "working_loop", "busy_loop", "workspaces_loop", "searching_loop",
+    };
+    static uint8_t focusMainIndex = 0;
+
+    if (random(100) < 65)
+    {
+      tabyPlayer.load(FOCUS_MAIN_IDS[focusMainIndex]);
+      focusMainIndex = (focusMainIndex + 1) % 3;
+    }
+    else
+    {
+      tabyPlayer.load(FOCUS_OTHER_IDS[random(4)]);
+    }
     tabyIsLooping = true;
-    setNeo(0, 150, 255);
+    setRandomNeo();
     break;
   }
   case ST_RELAX:
     tabyPlayer.load("relaxing_01_loop");
     tabyIsLooping = true;
-    setNeo(0, 200, 0);
+    setRandomNeo();
     break;
   case ST_LOVE:
     // love_01 is a one-shot clip in Taby's own registry (it's meant as a
@@ -281,18 +318,18 @@ void enterState(GazeState s)
     // IDLE/FOCUS/RELAX) rather than a momentary pop-up.
     tabyPlayer.load("love_01");
     tabyIsLooping = true;
-    setNeo(255, 0, 150);
+    setRandomNeo();
     break;
   case ST_ERROR:
     tabyPlayer.load("angry_01_loop");
     tabyIsLooping = true;
-    setNeo(200, 0, 0);
+    setRandomNeo();
     break;
   case ST_TABY:
     // No tabyPlayer.load() here — playTabyAnimation() (taby_screen.h)
     // already did it, and already set tabyIsLooping from the registry,
     // before calling enterState(ST_TABY).
-    setNeo(160, 120, 220); // generic "Taby bonus" indicator — not severity-graded
+    setRandomNeo();
     break;
   case ST_POMO_WORK:
     // Full screen, no animation — background+label drawn once here; the

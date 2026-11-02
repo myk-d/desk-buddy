@@ -2,15 +2,23 @@
 
 // Plays the Taby character GIFs straight off LittleFS (data/taby/<id>.gif,
 // uploaded via `pio run --target uploadfs`) using bitbank2/AnimatedGIF.
-// Kept at their original 280x456 resolution on disk (no flash-size pressure
-// now that they live in a filesystem partition, not PROGMEM) — downscaled
-// 2x by nearest-neighbor sampling right in the draw callback, so no extra
-// frame buffer is needed.
 //
-// The source GIFs are portrait (280x456) but come out rotated 90° on our
-// panel as-is (confirmed against the real device) — rotated 90°
-// counterclockwise here to compensate, which also turns the on-screen
-// footprint landscape: 456x280 scaled down -> 228x140, centered.
+// Each frame is decoded at FULL native resolution (280x456) into a PSRAM
+// sprite — same row-by-row GIFDraw pattern as the library's own SD-card
+// example, just targeting a sprite instead of the panel directly — then the
+// whole sprite is blitted to the real screen in one shot via LovyanGFX's
+// pushRotateZoom(), which rotates 90° (the source GIFs come out sideways on
+// our panel as-is, confirmed against the real device) and scales down to
+// fit (280x456 -> roughly 228x140 displayed, zoom 0.5) in hardware.
+//
+// An earlier version tried to downscale by point-sampling every 2nd row/
+// column directly in GIFDraw to save the sprite's RAM — don't do that
+// again: skipping pixels during a delta-GIF decode means any changed pixel
+// that happens to land on a skipped row/column never gets drawn, leaving
+// stale/ghost pixels and occasional stray colors that only clear once a
+// *sampled* pixel nearby happens to change. Decoding the full frame and
+// scaling as a single final blit has none of that — every row/column is
+// processed, exactly like the reference implementation.
 
 #include <AnimatedGIF.h>
 #include <LittleFS.h>
@@ -18,13 +26,20 @@
 AnimatedGIF tabyGif;
 File tabyGifFile;
 
-const int TABY_DRAW_SCALE = 2; // nearest-neighbor downscale factor
-const int TABY_SRC_W = 280;  // GIF's own native canvas, pre-rotation
+const int TABY_SRC_W = 280;  // GIF's own native canvas
 const int TABY_SRC_H = 456;
-const int TABY_DRAW_W = TABY_SRC_H / TABY_DRAW_SCALE; // 228 — swapped: rotating 90° swaps width/height
-const int TABY_DRAW_H = TABY_SRC_W / TABY_DRAW_SCALE; // 140
-const int TABY_DRAW_X = (320 - TABY_DRAW_W) / 2; // 46
-const int TABY_DRAW_Y = (240 - TABY_DRAW_H) / 2; // 50
+const float TABY_ZOOM = 0.5f;       // displayed size after rotation: ~228x140
+const float TABY_ROTATE_DEG = -90;  // counterclockwise — flip the sign if it ever comes out backwards
+
+LGFX_Sprite tabySprite(&lcd);
+
+bool tabySpriteBegin()
+{
+  tabySprite.setColorDepth(16);
+  tabySprite.setPsram(true);
+  tabySprite.setPivot(TABY_SRC_W / 2.0f, TABY_SRC_H / 2.0f); // rotate/zoom around the frame's center
+  return tabySprite.createSprite(TABY_SRC_W, TABY_SRC_H) != nullptr;
+}
 
 void *GIFOpenFile(const char *fname, int32_t *pSize)
 {
@@ -63,38 +78,22 @@ int32_t GIFSeekFile(GIFFILE *pFile, int32_t iPosition)
   return iPosition;
 }
 
-// One decoded (and already downscaled) column worth of RGB565 pixels — each
-// GIFDraw call is one source scanline (fixed src Y), which after a 90°
-// rotation becomes one destination COLUMN (fixed dest X), not a row.
-// TABY_SRC_W/SCALE (140) is the ceiling — real source rows are at most
-// 280px wide.
-static uint16_t tabyScanline[TABY_SRC_W / TABY_DRAW_SCALE + 1];
+// One decoded scanline worth of RGB565 pixels, at native (unscaled) width.
+static uint16_t tabyLineBuf[TABY_SRC_W];
 
-// 90° CCW rotation: for a source pixel at (srcX, srcY) in the TABY_SRC_W x
-// TABY_SRC_H canvas, the rotated+scaled destination is
-//   destX = TABY_DRAW_X + srcY / SCALE                (constant per GIFDraw call)
-//   destY = TABY_DRAW_Y + (TABY_SRC_W - 1 - srcX) / SCALE   (DEcreases as srcX increases)
-// so a whole scanline (increasing srcX) maps to one column, top-to-bottom
-// in REVERSE srcX order — everything below walks srcX from high to low to
-// build tabyScanline in increasing-destY order, exactly what
-// pushImage(w=1, h=N) expects to paint top-to-bottom.
 void GIFDraw(GIFDRAW *pDraw)
 {
-  if (pDraw->y % TABY_DRAW_SCALE != 0)
-    return; // row-downscale: only every Nth source row is actually drawn
-
   uint8_t *s = pDraw->pPixels;
   uint16_t *usPalette = pDraw->pPalette;
-  int srcWidth = pDraw->iWidth;
-  int srcY = pDraw->iY + pDraw->y;
-  int destX = TABY_DRAW_X + srcY / TABY_DRAW_SCALE;
+  int iWidth = pDraw->iWidth;
+  int y = pDraw->iY + pDraw->y;
 
   // Frames with disposal method 2 restore to the background color first —
   // same background-restore-before-draw handling as the library's own
   // SD-card example.
   if (pDraw->ucDisposalMethod == 2)
   {
-    for (int x = 0; x < srcWidth; x++)
+    for (int x = 0; x < iWidth; x++)
       if (s[x] == pDraw->ucTransparent)
         s[x] = pDraw->ucBackground;
     pDraw->ucHasTransparency = 0;
@@ -102,34 +101,30 @@ void GIFDraw(GIFDRAW *pDraw)
 
   if (pDraw->ucHasTransparency)
   {
-    int x = srcWidth - 1;
-    while (x >= 0)
+    // Batch contiguous opaque runs into pushImage calls, skip transparent
+    // ones (leaving whatever's already in the sprite from a previous frame
+    // — exactly what a delta-GIF frame expects).
+    int x = 0;
+    while (x < iWidth)
     {
+      int start = x;
       int count = 0;
-      int runStartDestY = -1;
-      while (x >= 0 && s[x] != pDraw->ucTransparent)
+      while (x < iWidth && s[x] != pDraw->ucTransparent)
       {
-        int srcX = pDraw->iX + x;
-        int destY = TABY_DRAW_Y + (TABY_SRC_W - 1 - srcX) / TABY_DRAW_SCALE;
-        if (count == 0)
-          runStartDestY = destY; // smallest destY of this run — pushImage's top
-        tabyScanline[count++] = usPalette[s[x]];
-        x -= TABY_DRAW_SCALE;
+        tabyLineBuf[count++] = usPalette[s[x]];
+        x++;
       }
       if (count)
-        lcd.pushImage(destX, runStartDestY, 1, count, tabyScanline);
-      while (x >= 0 && s[x] == pDraw->ucTransparent)
-        x -= TABY_DRAW_SCALE;
+        tabySprite.pushImage(pDraw->iX + start, y, count, 1, tabyLineBuf);
+      while (x < iWidth && s[x] == pDraw->ucTransparent)
+        x++;
     }
   }
   else
   {
-    int count = 0;
-    for (int x = srcWidth - 1; x >= 0; x -= TABY_DRAW_SCALE)
-      tabyScanline[count++] = usPalette[s[x]];
-    int lastSrcX = pDraw->iX + srcWidth - 1;
-    int destYStart = TABY_DRAW_Y + (TABY_SRC_W - 1 - lastSrcX) / TABY_DRAW_SCALE;
-    lcd.pushImage(destX, destYStart, 1, count, tabyScanline);
+    for (int x = 0; x < iWidth; x++)
+      tabyLineBuf[x] = usPalette[s[x]];
+    tabySprite.pushImage(pDraw->iX, y, iWidth, 1, tabyLineBuf);
   }
 }
 
@@ -139,6 +134,11 @@ public:
   bool load(const char *id)
   {
     close();
+    // tabySprite is shared across every animation — without this, a new
+    // GIF whose first frame doesn't cover the full 280x456 canvas leaves
+    // the *previous* animation's leftover pixels showing in the uncovered
+    // area, which reads as random/"inverted" colors bleeding in.
+    tabySprite.fillScreen(0x0000);
     snprintf(_path, sizeof(_path), "/taby/%s.gif", id);
     if (!tabyGif.open(_path, GIFOpenFile, GIFCloseFile, GIFReadFile, GIFSeekFile, GIFDraw))
       return false;
@@ -170,6 +170,11 @@ public:
     int delayMs = 0;
     int more = tabyGif.playFrame(false, &delayMs, nullptr);
     _nextDelayMs = delayMs;
+
+    // The frame GIFDraw just decoded into tabySprite is complete — blit it,
+    // rotated+scaled, in one shot.
+    tabySprite.pushRotateZoom(160, 120, TABY_ROTATE_DEG, TABY_ZOOM, TABY_ZOOM);
+
     if (more)
       return false;
 
