@@ -249,14 +249,31 @@ void setRandomNeo()
 // id and a NeoPixel color. loop() ticks whichever one is current — see the
 // tabyIsLooping comment in gaze_state.h for how dedicated states differ
 // from #TABY: bonus ones.
+// States whose on-screen content is just the small centered Taby sprite
+// (pushRotateZoom() always targets the same 160,120 pivot) — going between
+// any two of these needs no screen clear, since the next tick() overwrites
+// that exact region. Pomodoro/Claude/Notify/Sensor draw to the whole canvas
+// (or different areas of it), so entering/leaving *those* still needs the
+// clear, or stale background/text would linger around the animation.
+bool isTabyCenteredState(GazeState s)
+{
+  return s == ST_STARTUP || s == ST_IDLE || s == ST_FOCUS || s == ST_RELAX || s == ST_LOVE || s == ST_ERROR || s == ST_TABY;
+}
+
 void enterState(GazeState s)
 {
+  GazeState previous = currentState;
   currentState = s;
 
-  // Pomodoro draws to the WHOLE screen, other states only to a small central
-  // area. So the whole screen is cleared on ANY state change — otherwise old
-  // background/text would linger around the animation after leaving Pomodoro.
-  lcd.fillScreen(0x0000);
+  // Was an unconditional fillScreen() on every single state change —
+  // between two Taby-centered states (e.g. focus -> relax -> focus, which
+  // the window tracker can trigger every time the foreground app category
+  // flips) that meant a full-screen black flash on every transition, purely
+  // cosmetic since the next tick()'s pushRotateZoom() overwrites the exact
+  // same region anyway. Only clear when the screen's content actually
+  // changes shape.
+  if (!(isTabyCenteredState(previous) && isTabyCenteredState(s)))
+    lcd.fillScreen(0x0000);
 
   // Auto-lock during pomodoro states; unlock when leaving them
   pomoLocked = (s == ST_POMO_WORK || s == ST_POMO_BREAK || s == ST_POMO_LONGBREAK);
@@ -275,39 +292,29 @@ void enterState(GazeState s)
     break;
   case ST_FOCUS:
   {
-    // Three main ones (bored/excited/normal) round-robin in sequence each
-    // time FOCUS is (re-)entered, so it's not always the same clip — most
-    // of the time (65%) the rotation just advances; the rest of the time a
-    // different "Work & focus" loop gets thrown in instead, for variety,
-    // without breaking the round-robin's position. working_laptop_in/loop
-    // and the calm_work_*_f000 stills were dropped from the pool entirely
-    // (explicitly asked). One-shot transitions in this category
-    // (working_in, lockin, posture_check, copy_paste, workspaces_in) are
-    // still skipped: FOCUS is a persistent ambient state, nothing reverts
-    // it like the #TABY: bonus mechanism does for one-shots.
-    static const char *FOCUS_MAIN_IDS[] = {
+    // Only these three — picked randomly (not round-robin) each time FOCUS
+    // is (re-)entered. Every other "work & focus" loop (working_loop,
+    // busy_loop, workspaces_loop, searching_loop, working_laptop_in/loop,
+    // the calm_work_*_f000 stills) was dropped from the pool entirely
+    // (explicitly asked, to cut down on animation variety). One-shot
+    // transitions in this category (working_in, lockin, posture_check,
+    // copy_paste, workspaces_in) are still skipped: FOCUS is a persistent
+    // ambient state, nothing reverts it like the #TABY: bonus mechanism
+    // does for one-shots.
+    static const char *FOCUS_IDS[] = {
         "working_laptop_bored_loop", "working_laptop_excited_loop", "working_laptop_normal_loop",
     };
-    static const char *FOCUS_OTHER_IDS[] = {
-        "working_loop", "busy_loop", "workspaces_loop", "searching_loop",
-    };
-    static uint8_t focusMainIndex = 0;
-
-    if (random(100) < 65)
-    {
-      tabyPlayer.load(FOCUS_MAIN_IDS[focusMainIndex]);
-      focusMainIndex = (focusMainIndex + 1) % 3;
-    }
-    else
-    {
-      tabyPlayer.load(FOCUS_OTHER_IDS[random(4)]);
-    }
+    tabyPlayer.load(FOCUS_IDS[random(3)]);
     tabyIsLooping = true;
     setRandomNeo();
     break;
   }
   case ST_RELAX:
-    tabyPlayer.load("relaxing_01_loop");
+    // break_start is a one-shot clip in Taby's own registry — forced to
+    // loop here instead, same as love_01 below, since ST_RELAX is a
+    // persistent ambient state (no auto-revert). Replaced relaxing_01_loop
+    // (explicitly asked).
+    tabyPlayer.load("break_start");
     tabyIsLooping = true;
     setRandomNeo();
     break;
@@ -381,25 +388,22 @@ void enterState(GazeState s)
   }
 }
 
-// Shows one of Claude's own character animations (claude_in/claude_loop) in
-// place of the usage cards — currentState stays ST_CLAUDE, this is purely a
-// what's-drawn-right-now overlay, not a state change. pollClaudeAnim()
-// (below) reverts to drawClaudeScreen() once it's done.
-void playClaudeAnim(const char *id, bool loop)
+// Shows Claude's claude_in animation (one-shot) in place of the usage cards
+// — currentState stays ST_CLAUDE, this is purely a what's-drawn-right-now
+// overlay, not a state change. pollClaudeAnim() (below) reverts to
+// drawClaudeScreen() once it finishes.
+void playClaudeAnim(const char *id)
 {
   lcd.fillRect(0, 30, 320, 210, CLAUDE_BG_DARK); // clear the card area so the overlay isn't drawn on top of stale cards
   tabyPlayer.load(id);
-  claudeAnimLoops = loop;
   claudeAnimActive = true;
-  claudeAnimShownAtMs = millis();
 }
 
-// Non-blocking — called every loop() iteration. Two jobs: (1) tick/revert
-// whatever Claude anim is currently overlaying the dashboard, (2) once
-// that's not showing, occasionally start a fresh one (claude_loop) while
-// Claude is actively "working" — the same "mix animations in with the
-// dashboard" idea as pollTabyRandomShow(), just scoped to Claude's own two
-// animations instead of the ~84 bonus ones.
+// Non-blocking — called every loop() iteration. Just ticks/reverts the
+// claude_in overlay (played once by applyClaudeState() on a fresh
+// transition into "working"). claude_loop's periodic re-trigger while
+// working was dropped (explicitly asked, to cut down on animation variety)
+// — claude_in is the only Claude-specific anim left.
 void pollClaudeAnim()
 {
   if (currentState != ST_CLAUDE)
@@ -408,31 +412,14 @@ void pollClaudeAnim()
     return;
   }
 
-  if (claudeAnimActive)
-  {
-    bool finishedCycle = tabyPlayer.tick(claudeAnimLoops);
-    bool timeUp = claudeAnimLoops ? (millis() - claudeAnimShownAtMs > CLAUDE_ANIM_DISPLAY_MS) : finishedCycle;
-    if (timeUp)
-    {
-      claudeAnimActive = false;
-      drawClaudeScreen(); // back to the usage cards
-    }
+  if (!claudeAnimActive)
     return;
-  }
 
-  if (claudeSubState != 1)
-    return; // only interleave claude_loop while actively working
-  if (nextClaudeAnimIntervalMs == 0)
+  if (tabyPlayer.tick(false))
   {
-    lastClaudeAnimAtMs = millis();
-    nextClaudeAnimIntervalMs = random(CLAUDE_ANIM_MIN_MS, CLAUDE_ANIM_MAX_MS);
-    return;
+    claudeAnimActive = false;
+    drawClaudeScreen(); // back to the usage cards
   }
-  if (millis() - lastClaudeAnimAtMs < nextClaudeAnimIntervalMs)
-    return;
-  lastClaudeAnimAtMs = millis();
-  nextClaudeAnimIntervalMs = random(CLAUDE_ANIM_MIN_MS, CLAUDE_ANIM_MAX_MS);
-  playClaudeAnim("claude_loop", true);
 }
 
 // Shared code for #CLAUDE:/#USAGE: (serial) and /claude-state, /claude-usage
@@ -472,7 +459,7 @@ void applyClaudeState(int sub)
   // settling into the dashboard, same spirit as the startup animation
   // handing off to idle.
   if (sub == 1)
-    playClaudeAnim("claude_in", false);
+    playClaudeAnim("claude_in");
 }
 
 // NeoPixel activity indicator while Claude is "working" or "thinking" — a

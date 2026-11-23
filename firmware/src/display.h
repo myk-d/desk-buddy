@@ -46,7 +46,7 @@ public:
     auto b = _bus.config();
     b.spi_host = SPI2_HOST;
     b.spi_mode = 0;
-    b.freq_write = 40000000;
+    b.freq_write = 27000000; // 40MHz made the whole screen faintly flicker during GIF playback (static screens were fine)
     b.freq_read = 16000000;
     b.pin_sclk = 12;
     b.pin_mosi = 11;

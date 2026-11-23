@@ -125,7 +125,11 @@ void setup()
   {
     Serial.println("⚠️ LittleFS mount failed — did you run `pio run --target uploadfs`? No character animations (idle/focus/relax/love/error/startup/#TABY:<id>) will be available.");
   }
-  tabyGif.begin();
+  // BE, not the default LE: LovyanGFX's pushImage(uint16_t*) reads the
+  // buffer as byte-swapped RGB565 (swap565_t) unless setSwapBytes(true) —
+  // with LE palette entries every non-gray color came out byte-swapped
+  // (orange -> purple, wood-brown -> green).
+  tabyGif.begin(GIF_PALETTE_RGB565_BE);
   if (!tabySpriteBegin())
     Serial.println("⚠️ Taby sprite: failed to allocate PSRAM buffer");
   randomSeed(esp_random()); // hardware RNG — otherwise random() follows the same sequence every boot
@@ -148,7 +152,7 @@ void loop()
   pollSensorTimeout(); // same reason — otherwise the climate screen would never auto-revert to idle
   pollSensorAutoShow(); // same reason — otherwise Climate would only ever show when manually triggered
   pollClaudeActivityPulse(); // same reason — the NeoPixel needs to breathe while currentState == ST_CLAUDE
-  pollClaudeAnim(); // same reason — drives the claude_in/claude_loop overlay on top of the usage dashboard
+  pollClaudeAnim(); // same reason — drives the claude_in overlay on top of the usage dashboard
   pollTabyRandomShow(); // same reason — otherwise the random "just because" reactions would never fire
 
   // Pomodoro / Claude Code / Notify / Climate full-screen — no character
