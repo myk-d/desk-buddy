@@ -16,6 +16,20 @@
 #define PIN_I2C_SDA 4
 #define PIN_I2C_SCL 5
 
+// XPT2046 resistive touch, on the same display module — wired to its own
+// 5 GPIOs entirely (not sharing the display's SPI lines), since female-
+// female jumpers can't tap an already-occupied pin without soldering.
+// Software/bit-banged SPI (spi_host=-1 in display.h), so these can be any
+// free GPIOs, not tied to a hardware SPI peripheral. Picked to avoid
+// everything above plus octal PSRAM's internal GPIO33-37 (this board has
+// qio_opi PSRAM — those aren't broken out on the header at all for that
+// reason).
+#define PIN_TOUCH_CLK 6
+#define PIN_TOUCH_DIN 7
+#define PIN_TOUCH_DO 8
+#define PIN_TOUCH_CS 1
+#define PIN_TOUCH_IRQ 2
+
 // ═════════════════════════════════════════════════════════════════════════════
 // LovyanGFX — ILI9341 320×240 SPI
 // ═════════════════════════════════════════════════════════════════════════════
@@ -24,6 +38,7 @@ class LGFX_BeakBuddy : public lgfx::LGFX_Device
 {
   lgfx::Panel_ILI9341 _panel;
   lgfx::Bus_SPI _bus;
+  lgfx::Touch_XPT2046 _touch;
 
 public:
   LGFX_BeakBuddy()
@@ -50,6 +65,32 @@ public:
     p.rgb_order = false;
     _panel.config(p);
     _panel.setInvert(false);
+
+    // XPT2046 on its own independent, fully separate pins — spi_host=-1
+    // makes LovyanGFX bit-bang SPI over plain GPIOs instead of using a
+    // hardware SPI peripheral, so these don't need to be on any particular
+    // bus. x_min/x_max/y_min/y_max/offset_rotation calibrated against the
+    // real board (4-corner raw touch readings, solved against LovyanGFX's
+    // own setCalibrate()/convertRawXY() formulas — see the conversation
+    // around 2026-11-23) — don't hand-tune these without redoing that fit,
+    // small tweaks in isolation usually make it worse, not better.
+    auto t = _touch.config();
+    t.bus_shared = false;
+    t.spi_host = -1;
+    t.pin_sclk = PIN_TOUCH_CLK;
+    t.pin_mosi = PIN_TOUCH_DIN;
+    t.pin_miso = PIN_TOUCH_DO;
+    t.pin_cs = PIN_TOUCH_CS;
+    t.pin_int = PIN_TOUCH_IRQ;
+    t.freq = 1000000;
+    t.x_min = 346;
+    t.x_max = 3770;
+    t.y_min = 181;
+    t.y_max = 3675;
+    t.offset_rotation = 6;
+    _touch.config(t);
+    _panel.setTouch(&_touch);
+
     setPanel(&_panel);
   }
 };

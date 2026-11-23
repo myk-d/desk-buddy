@@ -89,6 +89,12 @@ State-changing HTTP handlers relay back over USB serial (`CLAUDE_RELAY:`, `USAGE
 
 Optional add-on, checked for at boot (`sensorsBegin()` in `sensor_screen.h`) — `sensorAvailable` stays `false` and the Climate screen just shows "Sensor not found" if it's missing or not wired yet, nothing else is affected. Wired to `PIN_I2C_SDA`/`PIN_I2C_SCL` (`display.h`, currently GPIO 4/5) — **picked without a physical board to verify against** (the sensor was still in transit when this was written), so confirm those are actually free/broken-out pins before wiring and update the defines if not. The BMP280 half can be strapped to I2C address `0x76` or `0x77` depending on the breakout; `sensorsBegin()` tries both.
 
+## Touchscreen (XPT2046)
+
+The display module has a resistive touch controller — wired to 5 independent GPIOs (`PIN_TOUCH_CLK/DIN/DO/CS/IRQ` = 6/7/8/1/2 in `display.h`), deliberately not sharing the panel's own SPI lines (female-female jumpers can't tap an already-occupied pin without soldering), so it runs bit-banged SPI (`spi_host = -1` in its config) rather than a hardware peripheral.
+
+Calibration (`x_min`/`x_max`/`y_min`/`y_max`/`offset_rotation` on the `Touch_XPT2046` config) was derived from 4 real corner taps, solved against LovyanGFX's own `setCalibrate()`/`convertRawXY()` formulas (`Panel_Device.cpp`) rather than guessed — don't hand-tune these in isolation, redo the fit (same method: tap all 4 corners, read raw `getTouchRaw()` values, solve) if the panel is ever rewired. Currently unused by any screen — `getTouch()` works and is calibrated, but nothing calls it yet.
+
 ## Known hardware limitation
 
 This device's Linux USB-CDC driver doesn't support the DTR/RTS toggling `esptool`'s default bootloader-reset sequence relies on — `pio run --target upload` fails with "No serial data received." The desktop app used to work around this with its own 1200-baud-touch reset trick (`electron/flasher.ts`), but that capability was deliberately removed from the app — **flashing is now fully manual**: hold the board's BOOT button (or tap it right as you plug in / while `pio run --target upload` is waiting) to force it into bootloader mode before the upload proceeds. Claude Code cannot flash the device directly in this environment either way — compiling is verifiable (`~/.platformio/penv/bin/pio run`, never the bare `pio`), flashing always needs the user physically present at the device.
