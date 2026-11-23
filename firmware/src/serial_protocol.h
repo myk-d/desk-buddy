@@ -171,6 +171,19 @@ void handlePacket(const String &cmd)
       return;
     }
 
+    // The desktop app's window-tracker sends its first classification
+    // (almost always "idle") within ~1.5s of connecting — well before the
+    // ~7.6s startup animation finishes — which used to cut it off mid-GIF
+    // every single time the app reconnected. Let it finish and hand off to
+    // ST_IDLE on its own (main.cpp's loop()); pomodoro/sensor/re-triggering
+    // startup itself still go through immediately.
+    bool isWindowTrackerAnim = (name == "idle" || name == "focus" || name == "relax" || name == "love" || name == "error");
+    if (currentState == ST_STARTUP && isWindowTrackerAnim)
+    {
+      Serial.println("⏳ startup animation still playing — ANIM ignored");
+      return;
+    }
+
     if (name == "startup")
     {
       enterState(ST_STARTUP);
